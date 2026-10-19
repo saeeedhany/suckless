@@ -27,8 +27,10 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
 - **dwm** 6.5 with alwayscenter, attachbelow, bidi-restricted, uselessgap,
   xresources and restartsig (`dwm/patches/`). SIGHUP reloads colors in place
   instead of restarting, and resource values are copied with a bound.
-- **st** 0.9.2 with xresources-signal-reloading, plus a fix: a key missing
-  from Xresources no longer inherits the previous key's value.
+- **st** 0.9.2 with xresources-signal-reloading, plus fixes: a key missing
+  from Xresources no longer inherits the previous key's value, the reload
+  runs in the main loop instead of the signal handler, and it no longer
+  leaks an X connection per reload.
 - **dmenu** the BreadOnPenguins fork (center + xresources), plus a fix for a
   crash when no Xresources are loaded.
 - **dwmblocks** torrinfail's, with `blocks.def.h` rebuilt from my installed

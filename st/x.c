@@ -188,6 +188,8 @@ static char *kmap(KeySym, uint);
 static int match(uint, uint);
 
 static void run(void);
+static void doreload(void);
+static volatile sig_atomic_t reloadpending = 0;
 static void usage(void);
 
 static void (*handler[LASTEvent])(XEvent *) = {
@@ -1951,6 +1953,11 @@ run(void)
 	cresize(w, h);
 
 	for (timeout = -1, drawing = 0, lastblink = (struct timespec){0};;) {
+		if (reloadpending) {
+			reloadpending = 0;
+			doreload();
+		}
+
 		FD_ZERO(&rfd);
 		FD_SET(ttyfd, &rfd);
 		FD_SET(xfd, &rfd);
@@ -2116,11 +2123,22 @@ xrdb_load(void)
 		XRESOURCE_LOAD_FLOAT("cwscale", cwscale);
 		XRESOURCE_LOAD_FLOAT("chscale", chscale);
 	}
-	XFlush(dpy);
+	/* the database holds its own copy of every value, and is kept for the
+	 * pointers above; the connection is only needed to read it */
+	XCloseDisplay(dpy);
+}
+
+/* SIGUSR1 only sets a flag: Xlib, Xft and malloc are not safe in a signal
+ * handler, so the reload itself runs in run() */
+void
+reload(int sig)
+{
+	reloadpending = 1;
+	signal(SIGUSR1, reload);
 }
 
 void
-reload(int sig)
+doreload(void)
 {
 	xrdb_load();
 
@@ -2133,11 +2151,6 @@ reload(int sig)
 	cresize(win.w, win.h);
 
 	redraw();
-
-	/* triggers re-render if we're visible. */
-	ttywrite("\033[O", 3, 1);
-
-	signal(SIGUSR1, reload);
 }
 
 
