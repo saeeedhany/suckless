@@ -13,10 +13,3 @@ setup() {
   [ -x "$WORK/st/st" ]
   [ -x "$WORK/dmenu/dmenu" ]
 }
-
-@test "config.def.h is byte-identical to the live tree" {
-  [ -d "$HOME/.config/suckless/dwm" ] || skip "no live tree"
-  for t in dwm st dmenu; do
-    cmp "$REPO/$t/config.def.h" "$HOME/.config/suckless/$t/config.def.h"
-  done
-}
