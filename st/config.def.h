@@ -95,33 +95,33 @@ unsigned int tabspaces = 8;
 
 /* Terminal colors (16 first used in escape sequence) */
 static const char *colorname[] = {
-    /* Normal */
-    "#282828", // black
-    "#cc241d", // red
-    "#98971a", // green
-    "#d79921", // yellow
-    "#458588", // blue
-    "#b16286", // magenta
-    "#689d6a", // cyan
-    "#ebdbb2", // white (changed from #a89984)
+	/* grey theme (dots); st.colorN in Xresources overrides, reloaded on USR1 */
+	/* normal */
+	"#353535", /* black */
+	"#c77a7a", /* red */
+	"#8aa66a", /* green */
+	"#c8a46b", /* yellow */
+	"#7b99a8", /* blue */
+	"#a8879a", /* magenta */
+	"#7fa39a", /* cyan */
+	"#ccc3b8", /* white */
+	/* bright */
+	"#7a7373", /* bright black */
+	"#d27c7c", /* bright red */
+	"#9ab87a", /* bright green */
+	"#d8b47a", /* bright yellow */
+	"#8daab8", /* bright blue */
+	"#b897aa", /* bright magenta */
+	"#90b4aa", /* bright cyan */
+	"#e0d8cd", /* bright white */
 
-    /* Bright */
-    "#928374", // bright black
-    "#fb4934", // bright red
-    "#b8bb26", // bright green
-    "#fabd2f", // bright yellow
-    "#83a598", // bright blue
-    "#d3869b", // bright magenta
-    "#8ec07c", // bright cyan
-    "#fbf1c7", // bright white (slightly brighter)
+	[255] = 0,
 
-    [255] = 0,
-
-    /* Defaults */
-    "#ebdbb2", // foreground
-    "#282828", // background
-    "#83a598", // cursor (changed from orange)
-    "#3c3836", // reverse cursor
+	/* defaults: foreground, background, cursor, reverse cursor */
+	"#ccc3b8", /* foreground */
+	"#282828", /* background */
+	"#c8a46b", /* cursor */
+	"#353535", /* reverse cursor */
 };
 
 
