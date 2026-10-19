@@ -222,6 +222,7 @@ static void setup(void);
 static void seturgent(Client *c, int urg);
 static void showhide(Client *c);
 static void sighup(int unused);
+static void reloadcolors(void);
 static void sigterm(int unused);
 static void spawn(const Arg *arg);
 static void tag(const Arg *arg);
@@ -282,6 +283,7 @@ static void (*handler[LASTEvent]) (XEvent *) = {
 };
 static Atom wmatom[WMLast], netatom[NetLast];
 static int restart = 0;
+static volatile sig_atomic_t reloadpending = 0;
 static int running = 1;
 static Cur *cursor[CurLast];
 static Clr **scheme;
@@ -1468,9 +1470,14 @@ run(void)
 	XEvent ev;
 	/* main event loop */
 	XSync(dpy, False);
-	while (running && !XNextEvent(dpy, &ev))
+	while (running && !XNextEvent(dpy, &ev)) {
+		if (reloadpending) {
+			reloadpending = 0;
+			reloadcolors();
+		}
 		if (handler[ev.type])
 			handler[ev.type](&ev); /* call handler */
+	}
 }
 
 void
@@ -1736,8 +1743,42 @@ showhide(Client *c)
 void
 sighup(int unused)
 {
-	Arg a = {.i = 1};
-	quit(&a);
+	/* only set a flag: the reload runs in run() at the next X event */
+	reloadpending = 1;
+}
+
+/* reloadcolors: re-read the colors from the root window's resources and
+ * redraw, without restarting, so windows keep their tags and monitors */
+void
+reloadcolors(void)
+{
+	Atom type;
+	int format, i;
+	unsigned long n, after;
+	unsigned char *data = NULL;
+	XrmDatabase db;
+	ResourcePref *p;
+	Monitor *m;
+	Client *c;
+
+	if (XGetWindowProperty(dpy, root, XA_RESOURCE_MANAGER, 0, 1L << 20, False,
+	    XA_STRING, &type, &format, &n, &after, &data) != Success || !data)
+		return;
+	db = XrmGetStringDatabase((char *)data);
+	for (p = resources; p < resources + LENGTH(resources); p++)
+		resource_load(db, p->name, p->type, p->dst);
+	XrmDestroyDatabase(db);
+	XFree(data);
+
+	for (i = 0; i < LENGTH(colors); i++) {
+		free(scheme[i]);
+		scheme[i] = drw_scm_create(drw, colors[i], 3);
+	}
+	for (m = mons; m; m = m->next)
+		for (c = m->clients; c; c = c->next)
+			XSetWindowBorder(dpy, c->win, scheme[c == selmon->sel
+			    ? SchemeSel : SchemeNorm][ColBorder].pixel);
+	drawbars();
 }
 
 void
@@ -2265,12 +2306,15 @@ resource_load(XrmDatabase db, char *name, enum resource_type rtype, void *dst)
 	snprintf(fullname, sizeof(fullname), "%s.%s", "dwm", name);
 	fullname[sizeof(fullname) - 1] = '\0';
 
-	XrmGetResource(db, fullname, "*", &type, &ret);
+	ret.addr = NULL;
+	if (!XrmGetResource(db, fullname, "*", &type, &ret))
+		return;
 	if (!(ret.addr == NULL || strncmp("String", type, 64)))
 	{
 		switch (rtype) {
 		case STRING:
-			strcpy(sdst, ret.addr);
+			/* color buffers in config.h are COLORLEN bytes */
+			snprintf(sdst, COLORLEN, "%s", ret.addr);
 			break;
 		case INTEGER:
 			*idst = strtoul(ret.addr, NULL, 10);

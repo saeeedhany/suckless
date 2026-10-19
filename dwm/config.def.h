@@ -9,13 +9,14 @@ static const int topbar             = 1;        /* 0 means bottom bar */
 static const char *fonts[]          = { "monospace:size=10", "Noto Sans Arabic:style=Regular:size=10",};
 static const char dmenufont[]       = "monospace:size=10";
 /* colors: compiled defaults are the grey theme; dwm.<name> in Xresources
- * overrides them (dots: theme <name>), reloaded on SIGHUP */
-static char normbgcolor[]     = "#282828";
-static char normbordercolor[] = "#282828";
-static char normfgcolor[]     = "#93877c";
-static char selbgcolor[]      = "#282828";
-static char selbordercolor[]  = "#282828";
-static char selfgcolor[]      = "#ccc3b8";
+ * overrides them (dots: theme <name>); SIGHUP reloads them in place */
+#define COLORLEN 32
+static char normbgcolor[COLORLEN]     = "#282828";
+static char normbordercolor[COLORLEN] = "#282828";
+static char normfgcolor[COLORLEN]     = "#93877c";
+static char selbgcolor[COLORLEN]      = "#282828";
+static char selbordercolor[COLORLEN]  = "#282828";
+static char selfgcolor[COLORLEN]      = "#ccc3b8";
 
 static char *colors[][3] = {
 	/*               fg           bg           border   */
