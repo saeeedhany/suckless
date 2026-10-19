@@ -786,6 +786,14 @@ readxresources(void) {
 			colors[SchemeSel][ColFg] = strdup(colors[SchemeSel][ColFg]);
 
 		XrmDestroyDatabase(xdb);
+	} else {
+		/* no resources loaded: copy the defaults too, since setup()
+		 * frees these strings */
+		fonts[0] = strdup(fonts[0]);
+		colors[SchemeNorm][ColBg] = strdup(colors[SchemeNorm][ColBg]);
+		colors[SchemeNorm][ColFg] = strdup(colors[SchemeNorm][ColFg]);
+		colors[SchemeSel][ColBg] = strdup(colors[SchemeSel][ColBg]);
+		colors[SchemeSel][ColFg] = strdup(colors[SchemeSel][ColFg]);
 	}
 }
 

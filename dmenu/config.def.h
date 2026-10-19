@@ -10,11 +10,12 @@ static const char *fonts[] = {
 	"0xProto Nerd Font:size=10", "monospace:size=11"
 };
 static const char *prompt      = NULL;      /* -p  option; prompt to the left of input field */
+/* grey theme (dots); dmenu.* in Xresources overrides */
 static const char *colors[SchemeLast][2] = {
 	/*     fg         bg       */
-	[SchemeNorm] = { "#bcb8ba", "#30272b" },
-	[SchemeSel] = { "#ebac88", "#443c40" },
-	[SchemeOut] = { "#30272b", "#f38b58" },
+	[SchemeNorm] = { "#93877c", "#282828" },
+	[SchemeSel] = { "#ccc3b8", "#282828" },
+	[SchemeOut] = { "#282828", "#c8a46b" },
 };
 /* -l option; if nonzero, dmenu uses vertical list with given number of lines */
 static unsigned int lines      = 0;
