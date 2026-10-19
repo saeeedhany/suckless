@@ -1,0 +1,10 @@
+*/config.h
+*.o
+dwm/dwm
+st/st
+dmenu/dmenu
+dmenu/stest
+dwmblocks/dwmblocks
+dwmblocks/blocks.h
+*.orig
+*.rej
