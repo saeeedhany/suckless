@@ -97,10 +97,10 @@ typedef struct {
 	int snap;
 	/*
 	 * Selection variables:
-	 * nb – normalized coordinates of the beginning of the selection
-	 * ne – normalized coordinates of the end of the selection
-	 * ob – original coordinates of the beginning of the selection
-	 * oe – original coordinates of the end of the selection
+	 * nb: normalized coordinates of the beginning of the selection
+	 * ne: normalized coordinates of the end of the selection
+	 * ob: original coordinates of the beginning of the selection
+	 * oe: original coordinates of the end of the selection
 	 */
 	struct {
 		int x, y;
