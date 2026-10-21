@@ -5,6 +5,7 @@ static const Block blocks[] = {
 	{"mem ", "~/.config/dwmblocks/scripts/ram_usage.sh",	2,	0},
 	{"vol ", "~/.config/dwmblocks/scripts/volume",	1,	0},
 	{"bat ", "~/.config/dwmblocks/scripts/battery",	30,	0},
+	{"kb ", "~/.config/dwmblocks/scripts/keyboard",	1,	0},
 	{"", "~/.config/dwmblocks/scripts/date_time",	1,	0},
 };
 
