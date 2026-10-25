@@ -1,6 +1,7 @@
 #include<stdlib.h>
 #include<stdio.h>
 #include<string.h>
+#include<time.h>
 #include<unistd.h>
 #include<signal.h>
 #ifndef NO_X
@@ -28,7 +29,7 @@ typedef struct {
 void dummysighandler(int num);
 #endif
 void sighandler(int num);
-void getcmds(int time);
+void getcmds(long time);
 void getsigcmds(unsigned int signal);
 void setupsignals();
 void sighandler(int signum);
@@ -81,7 +82,7 @@ void getcmd(const Block *block, char *output)
 	pclose(cmdf);
 }
 
-void getcmds(int time)
+void getcmds(long time)
 {
 	const Block* current;
 	for (unsigned int i = 0; i < LENGTH(blocks); i++) {
@@ -160,14 +161,26 @@ void pstdout()
 void statusloop()
 {
 	setupsignals();
-	int i = 0;
+	struct timespec ts;
+	long now, last = -1;
 	getcmds(-1);
 	while (1) {
-		getcmds(i++);
+		clock_gettime(CLOCK_REALTIME, &ts);
+		now = (long)ts.tv_sec;
+		if (now != last)
+			getcmds(now);
+		last = now;
 		writestatus();
 		if (!statusContinue)
 			break;
-		sleep(1.0);
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_sec = 0;
+		ts.tv_nsec = 1001000000L - ts.tv_nsec;
+		if (ts.tv_nsec >= 1000000000L) {
+			ts.tv_sec = 1;
+			ts.tv_nsec -= 1000000000L;
+		}
+		nanosleep(&ts, NULL);
 	}
 }
 
