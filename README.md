@@ -3,8 +3,15 @@
 My dwm, st, dmenu and dwmblocks, as they run on my machine.
 
 ```
-make && sudo make install
+make install
 ```
+
+Everything installs to `~/.local`, so no root is needed. Each tool has one
+settings file, its `config.def.h` (`blocks.def.h` for dwmblocks): edit it and
+build again, no `make clean` needed.
+
+An older copy installed with sudo into `/usr/local` can be removed once with
+`sudo make uninstall PREFIX=/usr/local`.
 
 The [dots](https://github.com/saeeedhany/dots) installer clones this repo to
 `~/.config/suckless` and builds it for you.
