@@ -62,7 +62,7 @@ enum { CurNormal, CurResize, CurMove, CurLast }; /* cursor */
 enum { SchemeNorm, SchemeSel }; /* color schemes */
 enum { NetSupported, NetWMName, NetWMState, NetWMCheck,
        NetWMFullscreen, NetActiveWindow, NetWMWindowType,
-       NetWMWindowTypeDialog, NetClientList, NetLast }; /* EWMH atoms */
+       NetWMWindowTypeDialog, NetClientList, NetClientInfo, NetLast }; /* EWMH atoms */
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast }; /* default atoms */
 enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
        ClkClientWin, ClkRootWin, ClkLast }; /* clicks */
@@ -220,6 +220,9 @@ static void setup(void);
 static void seturgent(Client *c, int urg);
 static void showhide(Client *c);
 static void sighup(int unused);
+static void sigusr1(int unused);
+static void getclienttagprop(Client *c);
+static void setclienttagprop(Client *c);
 static void reloadcolors(void);
 static void sigterm(int unused);
 static void spawn(const Arg *arg);
@@ -281,6 +284,7 @@ static void (*handler[LASTEvent]) (XEvent *) = {
 static Atom wmatom[WMLast], netatom[NetLast];
 static int restart = 0;
 static volatile sig_atomic_t reloadpending = 0;
+static volatile sig_atomic_t restartpending = 0;
 static int running = 1;
 static Cur *cursor[CurLast];
 static Clr **scheme;
@@ -1081,7 +1085,9 @@ manage(Window w, XWindowAttributes *wa)
 	} else {
 		c->mon = selmon;
 		applyrules(c);
+		getclienttagprop(c);
 	}
+	setclienttagprop(c);
 
 	if (c->x + WIDTH(c) > c->mon->wx + c->mon->ww)
 		c->x = c->mon->wx + c->mon->ww - WIDTH(c);
@@ -1450,6 +1456,10 @@ run(void)
 			reloadpending = 0;
 			reloadcolors();
 		}
+		if (restartpending) {
+			restart = 1;
+			running = 0;
+		}
 		if (handler[ev.type])
 			handler[ev.type](&ev); /* call handler */
 	}
@@ -1492,6 +1502,7 @@ sendmon(Client *c, Monitor *m)
 	detachstack(c);
 	c->mon = m;
 	c->tags = m->tagset[m->seltags]; /* assign tags of target monitor */
+	setclienttagprop(c);
 	if( attachBelow )
 		attachBelow(c);
 	else
@@ -1622,6 +1633,7 @@ setup(void)
 	while (waitpid(-1, NULL, WNOHANG) > 0);
 
 	signal(SIGHUP, sighup);
+	signal(SIGUSR1, sigusr1);
 	signal(SIGTERM, sigterm);
 
 	/* init screen */
@@ -1650,6 +1662,7 @@ setup(void)
 	netatom[NetWMWindowType] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
 	netatom[NetWMWindowTypeDialog] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
 	netatom[NetClientList] = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
+	netatom[NetClientInfo] = XInternAtom(dpy, "_NET_CLIENT_INFO", False);
 	/* init cursors */
 	cursor[CurNormal] = drw_cur_create(drw, XC_left_ptr);
 	cursor[CurResize] = drw_cur_create(drw, XC_sizing);
@@ -1757,6 +1770,45 @@ reloadcolors(void)
 }
 
 void
+sigusr1(int unused)
+{
+	restartpending = 1;
+}
+
+void
+getclienttagprop(Client *c)
+{
+	Atom type;
+	int format;
+	unsigned long n, after;
+	unsigned char *data = NULL;
+	long *v;
+	Monitor *m;
+
+	if (XGetWindowProperty(dpy, c->win, netatom[NetClientInfo], 0L, 2L, False, XA_CARDINAL,
+	    &type, &format, &n, &after, &data) == Success && data && n == 2) {
+		v = (long *)data;
+		if (v[0] & TAGMASK) {
+			c->tags = v[0] & TAGMASK;
+			for (m = mons; m; m = m->next)
+				if (m->num == v[1])
+					c->mon = m;
+		}
+	}
+	if (data)
+		XFree(data);
+}
+
+void
+setclienttagprop(Client *c)
+{
+	long data[] = { (long) c->tags, (long) c->mon->num };
+
+	XChangeProperty(dpy, c->win, netatom[NetClientInfo], XA_CARDINAL, 32,
+		PropModeReplace, (unsigned char *) data, 2);
+}
+
+void
 sigterm(int unused)
 {
 	Arg a = {.i = 0};
@@ -1790,6 +1842,7 @@ tag(const Arg *arg)
 {
 	if (selmon->sel && arg->ui & TAGMASK) {
 		selmon->sel->tags = arg->ui & TAGMASK;
+		setclienttagprop(selmon->sel);
 		focus(NULL);
 		arrange(selmon);
 	}
@@ -1864,6 +1917,7 @@ toggletag(const Arg *arg)
 	newtags = selmon->sel->tags ^ (arg->ui & TAGMASK);
 	if (newtags) {
 		selmon->sel->tags = newtags;
+		setclienttagprop(selmon->sel);
 		focus(NULL);
 		arrange(selmon);
 	}

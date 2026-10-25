@@ -33,7 +33,9 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
 
 - **dwm** 6.5 with alwayscenter, attachbelow, bidi-restricted, uselessgap,
   xresources and restartsig (`dwm/patches/`). SIGHUP reloads colors in place
-  instead of restarting, and resource values are copied with a bound.
+  instead of restarting, and resource values are copied with a bound. SIGUSR1
+  restarts dwm in place, and every window keeps its tag and monitor: dwm keeps
+  them in a `_NET_CLIENT_INFO` property on each window and reads it back.
 - **st** 0.9.2 with xresources-signal-reloading, plus fixes: a key missing
   from Xresources no longer inherits the previous key's value, the reload
   runs in the main loop instead of the signal handler, and it no longer

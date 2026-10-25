@@ -73,3 +73,50 @@ teardown() {
   [ "$(window_x probe)" -lt 0 ]
   kill "$ST_PID"
 }
+
+@test "the binary carries the restart marker the suckless command looks for" {
+  grep -qa _NET_CLIENT_INFO "$WORK/dwm"
+}
+
+start_probe() {
+  rsync -a "$REPO/st/" "$BATS_TEST_TMPDIR/st/"
+  make -C "$BATS_TEST_TMPDIR/st" >/dev/null 2>&1
+  "$BATS_TEST_TMPDIR/st/st" -t probe & ST_PID=$!
+  for i in $(seq 30); do xdotool search --name probe >/dev/null 2>&1 && break; sleep 0.1; done
+  sleep 0.3
+}
+
+@test "a window records its tag and monitor in _NET_CLIENT_INFO" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  start_xvfb
+  xrdb -load /dev/null
+  "$WORK/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+  start_probe
+  xdotool key super+shift+2
+  sleep 0.3
+  [ "$(xprop -id "$(xdotool search --name probe | head -1)" _NET_CLIENT_INFO | sed 's/.*= //')" = "2, 0" ]
+  kill "$ST_PID"
+}
+
+@test "SIGUSR1 restarts dwm in place and every window keeps its tag" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  start_xvfb
+  xrdb -load /dev/null
+  "$WORK/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+  start_probe
+  xdotool key super+shift+2
+  sleep 0.3
+  [ "$(window_x probe)" -lt 0 ]
+  printf 'dwm.normbgcolor: #161717\ndwm.selbgcolor: #161717\n' | xrdb -merge
+  kill -USR1 "$DWM_PID"
+  xsetroot -name "dots"
+  wait_for_pixel 400 5 '#161717'
+  kill -0 "$DWM_PID"
+  [ "$(window_x probe)" -lt 0 ]
+  xdotool key super+2
+  sleep 0.3
+  [ "$(window_x probe)" -ge 0 ]
+  kill "$ST_PID"
+}
