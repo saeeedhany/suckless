@@ -120,3 +120,9 @@ start_probe() {
   [ "$(window_x probe)" -ge 0 ]
   kill "$ST_PID"
 }
+
+@test "a color reload frees the old colors with drw_scm_free" {
+  body=$(awk '/^reloadcolors\(void\)/,/^}/' "$REPO/dwm/dwm.c")
+  [[ "$body" == *"drw_scm_free(drw, scheme[i], 3)"* ]]
+  ! grep -qE '^[[:space:]]+free\(scheme\[i\]\);' <<<"$body"
+}

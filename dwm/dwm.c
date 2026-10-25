@@ -1760,7 +1760,7 @@ reloadcolors(void)
 	XFree(data);
 
 	for (i = 0; i < LENGTH(colors); i++) {
-		free(scheme[i]);
+		drw_scm_free(drw, scheme[i], 3);
 		scheme[i] = drw_scm_create(drw, colors[i], 3);
 	}
 	for (m = mons; m; m = m->next)
