@@ -81,3 +81,24 @@ upstream_release() {
     grep -qE "^$t https?://" "$REPO/upstream.list" || { echo "missing $t"; return 1; }
   done
 }
+
+@test "add brings a new tool in from upstream and records its base" {
+  printf 'tool %s\nnew %s\n' "$UP" "$UP" > upstream.list
+  git commit -qam "list a new tool"
+  run ./upstream add new 1.0
+  [ "$status" -eq 0 ]
+  [ "$(cat new/a.c)" = "$(printf 'one\ntwo\nthree\nfour\nfive')" ]
+  [ -z "$(git status --porcelain)" ]
+  run ./upstream
+  [[ "$output" == *"new"*"1.0"* ]]
+  upstream_release 's/one/ONE/' 2.0
+  run ./upstream merge new 2.0
+  [ "$status" -eq 0 ]
+  [ "$(head -1 new/a.c)" = ONE ]
+}
+
+@test "add refuses a folder that already exists" {
+  run ./upstream add tool 1.0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"exists"* ]]
+}

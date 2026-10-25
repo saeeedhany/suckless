@@ -10,6 +10,7 @@ usage: ./upstream                      each tool, the upstream release it is bui
        ./upstream diff <tool>          my changes on top of upstream
        ./upstream merge <tool> <ref>   move <tool> to an upstream release, keeping my changes
        ./upstream track <tool> <ref>   record the upstream release <tool> is built on, once
+       ./upstream add <tool> <ref>     bring a new tool in from upstream, as <tool>/
 USAGE
 }
 
@@ -102,6 +103,18 @@ case "${1:-}" in
     git merge -q -s ours --allow-unrelated-histories --no-edit \
       -m "$2: built on upstream $3" "$(resolve "$2" "$3")"
     echo "$2: built on upstream $3"
+    ;;
+  add)
+    [[ $# -eq 3 ]] || { usage; exit 2; }
+    need_tool "$2"
+    need_clean
+    [[ ! -e "$2" ]] || { echo "upstream: $2/ already exists" >&2; exit 1; }
+    fetch "$2"
+    commit="$(resolve "$2" "$3")"
+    git merge -q -s ours --no-commit --allow-unrelated-histories "$commit"
+    git read-tree --prefix="$2/" -u "$commit"
+    git commit -q -m "$2: add upstream $3"
+    echo "$2: added from upstream $3"
     ;;
   merge)
     [[ $# -eq 3 ]] || { usage; exit 2; }
