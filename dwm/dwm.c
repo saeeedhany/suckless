@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -226,6 +227,7 @@ static void setclienttagprop(Client *c);
 static void reloadcolors(void);
 static void sigterm(int unused);
 static void spawn(const Arg *arg);
+static void spawnfloat(const Arg *arg);
 static void tag(const Arg *arg);
 static void tagmon(const Arg *arg);
 static void tile(Monitor *m);
@@ -285,6 +287,7 @@ static Atom wmatom[WMLast], netatom[NetLast];
 static int restart = 0;
 static volatile sig_atomic_t reloadpending = 0;
 static volatile sig_atomic_t restartpending = 0;
+static time_t floatnext = 0;
 static int running = 1;
 static Cur *cursor[CurLast];
 static Clr **scheme;
@@ -1088,7 +1091,6 @@ manage(Window w, XWindowAttributes *wa)
 		applyrules(c);
 		getclienttagprop(c);
 	}
-	setclienttagprop(c);
 
 	if (c->x + WIDTH(c) > c->mon->wx + c->mon->ww)
 		c->x = c->mon->wx + c->mon->ww - WIDTH(c);
@@ -1109,8 +1111,17 @@ manage(Window w, XWindowAttributes *wa)
 	c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
 	XSelectInput(dpy, w, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
 	grabbuttons(c, 0);
+	if (floatnext && time(NULL) <= floatnext) {
+		c->isfloating = c->oldstate = 1;
+		floatnext = 0;
+		c->w = MIN(c->w, (int)(c->mon->ww * floatmax[0]));
+		c->h = MIN(c->h, (int)(c->mon->wh * floatmax[1]));
+		c->x = c->mon->mx + (c->mon->mw - WIDTH(c)) / 2;
+		c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
+	}
 	if (!c->isfloating)
 		c->isfloating = c->oldstate = trans != None || c->isfixed;
+	setclienttagprop(c);
 	if (c->isfloating)
 		XRaiseWindow(dpy, c->win);
 	if( attachBelow )
@@ -1786,8 +1797,8 @@ getclienttagprop(Client *c)
 	long *v;
 	Monitor *m;
 
-	if (XGetWindowProperty(dpy, c->win, netatom[NetClientInfo], 0L, 2L, False, XA_CARDINAL,
-	    &type, &format, &n, &after, &data) == Success && data && n == 2) {
+	if (XGetWindowProperty(dpy, c->win, netatom[NetClientInfo], 0L, 3L, False, XA_CARDINAL,
+	    &type, &format, &n, &after, &data) == Success && data && n >= 2) {
 		v = (long *)data;
 		if (v[0] & TAGMASK) {
 			c->tags = v[0] & TAGMASK;
@@ -1795,6 +1806,8 @@ getclienttagprop(Client *c)
 				if (m->num == v[1])
 					c->mon = m;
 		}
+		if (n == 3 && v[2])
+			c->isfloating = c->oldstate = 1;
 	}
 	if (data)
 		XFree(data);
@@ -1803,10 +1816,10 @@ getclienttagprop(Client *c)
 void
 setclienttagprop(Client *c)
 {
-	long data[] = { (long) c->tags, (long) c->mon->num };
+	long data[] = { (long) c->tags, (long) c->mon->num, (long) c->isfloating };
 
 	XChangeProperty(dpy, c->win, netatom[NetClientInfo], XA_CARDINAL, 32,
-		PropModeReplace, (unsigned char *) data, 2);
+		PropModeReplace, (unsigned char *) data, 3);
 }
 
 void
@@ -1836,6 +1849,13 @@ spawn(const Arg *arg)
 		execvp(((char **)arg->v)[0], (char **)arg->v);
 		die("dwm: execvp '%s' failed:", ((char **)arg->v)[0]);
 	}
+}
+
+void
+spawnfloat(const Arg *arg)
+{
+	floatnext = time(NULL) + 10;
+	spawn(arg);
 }
 
 void
@@ -1902,6 +1922,7 @@ togglefloating(const Arg *arg)
 	if (selmon->sel->isfullscreen) /* no support for fullscreen windows */
 		return;
 	selmon->sel->isfloating = !selmon->sel->isfloating || selmon->sel->isfixed;
+	setclienttagprop(selmon->sel);
 	if (selmon->sel->isfloating)
 		resize(selmon->sel, selmon->sel->x, selmon->sel->y,
 			selmon->sel->w, selmon->sel->h, 0);

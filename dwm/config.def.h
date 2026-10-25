@@ -37,6 +37,7 @@ static const Rule rules[] = {
 	{ "feh",      NULL,       NULL,       0,            1,           -1 },
 	{ "mpv",      NULL,       NULL,       0,            1,           -1 },
 	{ "Qemu",     NULL,       NULL,       0,            1,           -1 },
+	{ "floatterm", NULL,      NULL,       0,            1,           -1 },
 	{ "Firefox",  NULL,       NULL,       1 << 8,       0,           -1 },
 };
 
@@ -45,6 +46,7 @@ static const float mfact     = 0.55; /* factor of master area size [0.05..0.95] 
 static const int nmaster     = 1;    /* number of clients in master area */
 static const int resizehints = 0;    /* 1 means respect size hints in tiled resizals */
 static const int lockfullscreen = 1; /* 1 will force focus on the fullscreen window */
+static const float floatmax[] = { 0.6, 0.7 };
 static const int refreshrate = 144;  /* refresh rate (per second) for client move/resize */
 
 static const Layout layouts[] = {
@@ -70,6 +72,8 @@ static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() 
 /* no color flags: dmenu reads its colors from Xresources */
 static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, NULL };
 static const char *termcmd[]  = { "st", NULL };
+static const char *floattermcmd[] = { "st", "-c", "floatterm", NULL };
+static const char *webcmd[]   = { "firefox", "--new-window", NULL };
 
 /* Xresources preferences loaded at startup */
 ResourcePref resources[] = {
@@ -85,6 +89,8 @@ static const Key keys[] = {
 	/* modifier                     key        function        argument */
 	{ MODKEY,                       XK_p,      spawn,          {.v = dmenucmd } },
 	{ MODKEY|ShiftMask,             XK_Return, spawn,          {.v = termcmd } },
+	{ MODKEY|ControlMask,           XK_Return, spawn,          {.v = floattermcmd } },
+	{ MODKEY|ControlMask,           XK_w,      spawnfloat,     {.v = webcmd } },
 	{ MODKEY,                       XK_b,      togglebar,      {0} },
 	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
 	{ MODKEY,                       XK_k,      focusstack,     {.i = -1 } },

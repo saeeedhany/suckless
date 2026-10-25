@@ -35,7 +35,11 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
   xresources and restartsig (`dwm/patches/`). SIGHUP reloads colors in place
   instead of restarting, and resource values are copied with a bound. SIGUSR1
   restarts dwm in place, and every window keeps its tag and monitor: dwm keeps
-  them in a `_NET_CLIENT_INFO` property on each window and reads it back.
+  them, and whether it floats, in a `_NET_CLIENT_INFO` property on each window
+  and reads it back. `super ctrl return` opens a floating st (class `floatterm`,
+  floated by a rule); `super ctrl w` floats the next window that opens, for
+  Firefox, whose new windows all share one class. That window is capped at
+  `floatmax` of the screen and centered.
 - **st** 0.9.3 with xresources-signal-reloading, plus fixes: a key missing
   from Xresources no longer inherits the previous key's value, the reload
   runs in the main loop instead of the signal handler, and it no longer

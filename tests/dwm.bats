@@ -95,7 +95,7 @@ start_probe() {
   start_probe
   xdotool key super+shift+2
   sleep 0.3
-  [ "$(xprop -id "$(xdotool search --name probe | head -1)" _NET_CLIENT_INFO | sed 's/.*= //')" = "2, 0" ]
+  [ "$(xprop -id "$(xdotool search --name probe | head -1)" _NET_CLIENT_INFO | sed 's/.*= //')" = "2, 0, 0" ]
   kill "$ST_PID"
 }
 
@@ -125,4 +125,121 @@ start_probe() {
   body=$(awk '/^reloadcolors\(void\)/,/^}/' "$REPO/dwm/dwm.c")
   [[ "$body" == *"drw_scm_free(drw, scheme[i], 3)"* ]]
   ! grep -qE '^[[:space:]]+free\(scheme\[i\]\);' <<<"$body"
+}
+
+new_window() {
+  local before="$1" id i
+  for i in $(seq 50); do
+    for id in $(xdotool search --classname st 2>/dev/null); do
+      [[ " $before " == *" $id "* ]] || { echo "$id"; return 0; }
+    done
+    sleep 0.1
+  done
+  return 1
+}
+
+geometry() { xdotool getwindowgeometry --shell "$1" | grep -E "^$2=" | cut -d= -f2; }
+
+@test "super ctrl return floats the next st only, centered; super shift return still tiles" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  rsync -a "$REPO/st/" "$BATS_TEST_TMPDIR/stbin/"
+  make -C "$BATS_TEST_TMPDIR/stbin" >/dev/null 2>&1
+  export PATH="$BATS_TEST_TMPDIR/stbin:$PATH"
+  start_xvfb
+  xrdb -load /dev/null
+  "$WORK/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+  xdotool key super+ctrl+Return
+  float=$(new_window "")
+  sleep 0.5
+  fw=$(geometry "$float" WIDTH); fx=$(geometry "$float" X)
+  [ "$fx" -gt 20 ]
+  xdotool key super+shift+Return
+  tiled=$(new_window "$float")
+  sleep 0.5
+  [ "$(geometry "$tiled" WIDTH)" -gt "$fw" ]
+  [ "$(geometry "$tiled" X)" -lt 20 ]
+  [ "$(geometry "$float" WIDTH)" -eq "$fw" ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "a firefox floated by super ctrl w is capped at 60% by 70% of the screen, centered" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  rsync -a "$REPO/st/" "$BATS_TEST_TMPDIR/stbin/"
+  make -C "$BATS_TEST_TMPDIR/stbin" >/dev/null 2>&1
+  mkdir -p "$BATS_TEST_TMPDIR/wrap"
+  printf '#!/bin/sh\nexec "%s/stbin/st" -g 300x120\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/wrap/firefox"
+  chmod +x "$BATS_TEST_TMPDIR/wrap/firefox"
+  export PATH="$BATS_TEST_TMPDIR/wrap:$PATH"
+  start_xvfb
+  xrdb -load /dev/null
+  "$WORK/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+  xdotool key super+ctrl+w
+  win=$(new_window "")
+  sleep 0.5
+  w=$(geometry "$win" WIDTH); h=$(geometry "$win" HEIGHT); x=$(geometry "$win" X)
+  [ "$w" -le 480 ]
+  [ "$h" -le 420 ]
+  [ "$x" -ge 150 ] && [ "$x" -le 170 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+start_dwm_with_st() {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  rsync -a "$REPO/st/" "$BATS_TEST_TMPDIR/stbin/"
+  make -C "$BATS_TEST_TMPDIR/stbin" >/dev/null 2>&1
+  export PATH="$BATS_TEST_TMPDIR/stbin:$PATH"
+  start_xvfb
+  xrdb -load /dev/null
+  "$WORK/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+}
+
+@test "the floating terminal is st with class floatterm, floated by a rule" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  win=$(new_window "")
+  sleep 0.5
+  xprop -id "$win" WM_CLASS | grep -q '"floatterm"'
+  [ "$(geometry "$win" X)" -gt 20 ]
+  [ "$(xprop -id "$win" _NET_CLIENT_INFO | sed 's/.*, //')" = 1 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "floating windows stay floating, and tiled ones tiled, across a restart" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  float=$(new_window "")
+  sleep 0.5
+  xdotool key super+shift+Return
+  tiled=$(new_window "$float")
+  sleep 0.5
+  fw=$(geometry "$float" WIDTH)
+  kill -USR1 "$DWM_PID"
+  xsetroot -name "dots"
+  sleep 1
+  kill -0 "$DWM_PID"
+  [ "$(geometry "$float" WIDTH)" -eq "$fw" ]
+  [ "$(geometry "$float" X)" -gt 20 ]
+  [ "$(geometry "$tiled" X)" -lt 20 ]
+  [ "$(geometry "$tiled" WIDTH)" -gt "$fw" ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "a window floated by hand stays floating after a restart" {
+  start_dwm_with_st
+  xdotool key super+shift+Return
+  first=$(new_window "")
+  sleep 0.5
+  xdotool key super+shift+space
+  sleep 0.3
+  kill -USR1 "$DWM_PID"
+  xsetroot -name "dots"
+  sleep 1
+  xdotool key super+shift+Return
+  second=$(new_window "$first")
+  sleep 0.5
+  [ "$(geometry "$second" WIDTH)" -gt 700 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
 }
