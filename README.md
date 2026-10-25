@@ -49,6 +49,21 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
 - **dwmblocks** torrinfail's, with `blocks.def.h` rebuilt from my installed
   binary (its source was lost). Scripts live in dots: `config/dwmblocks/scripts/`.
 
+## Upstream
+
+Each folder is linked to the upstream it is built on (`upstream.list`), so git
+knows which lines are mine and which are upstream's.
+
+```
+./upstream                  each tool, the release it is built on, and the newest one
+./upstream diff dwm         only my changes on top of upstream dwm
+./upstream merge dwm 6.8    move dwm to 6.8, keeping my changes
+```
+
+A merge reapplies every change here onto the new release. Where a change
+clashes with upstream, it stops and names the files; fix them, then `git add`
+and `git commit`, or back out with `git merge --abort`.
+
 ## Tests
 
 `bats tests/` builds everything and checks real pixels in a headless X

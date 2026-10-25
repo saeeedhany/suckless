@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$(readlink -f "$0")")"
+LIST=upstream.list
+
+usage() {
+  cat <<'USAGE'
+usage: ./upstream                      each tool, the upstream release it is built on, and the newest one
+       ./upstream diff <tool>          my changes on top of upstream
+       ./upstream merge <tool> <ref>   move <tool> to an upstream release, keeping my changes
+       ./upstream track <tool> <ref>   record the upstream release <tool> is built on, once
+USAGE
+}
+
+url_of() { awk -v t="$1" '$1 == t { print $2 }' "$LIST"; }
+
+need_tool() {
+  [[ -n "$(url_of "$1")" ]] || { echo "upstream: no tool named $1 in $LIST" >&2; usage >&2; exit 2; }
+}
+
+need_clean() {
+  git diff --quiet HEAD || { echo "upstream: commit or stash your changes first" >&2; exit 1; }
+}
+
+fetch() {
+  git fetch -q --no-tags "$(url_of "$1")" \
+    "+refs/heads/*:refs/upstream/$1/heads/*" "+refs/tags/*:refs/upstream/$1/tags/*"
+}
+
+resolve() {
+  local r
+  for r in "refs/upstream/$1/tags/$2" "refs/upstream/$1/heads/$2" "$2"; do
+    git rev-parse -q --verify "$r^{commit}" 2>/dev/null && return 0
+  done
+  echo "upstream: $1 has no release or commit named $2" >&2
+  exit 1
+}
+
+name_of() {
+  local r
+  while read -r r; do
+    if [[ "$(git rev-parse "$r^{commit}")" == "$2" ]]; then
+      printf '%s' "${r#refs/upstream/"$1"/tags/}"
+      return
+    fi
+  done < <(git for-each-ref --format='%(refname)' "refs/upstream/$1/tags")
+  git rev-parse --short "$2"
+}
+
+base_of() {
+  local h mb
+  while read -r h; do
+    if mb="$(git merge-base HEAD "$h" 2>/dev/null)"; then
+      printf '%s' "$mb"
+      return
+    fi
+  done < <(git for-each-ref --format='%(refname)' "refs/upstream/$1/heads")
+  echo "upstream: $1 is not tracked yet, run: ./upstream track $1 <ref>" >&2
+  exit 1
+}
+
+newest() {
+  local t
+  t="$(git for-each-ref --format='%(refname:lstrip=4)' "refs/upstream/$1/tags" | sort -V | tail -n 1)"
+  if [[ -n "$t" ]]; then
+    printf '%s' "$t"
+  else
+    git rev-parse --short "$(git for-each-ref --format='%(refname)' "refs/upstream/$1/heads" | head -n 1)"
+  fi
+}
+
+list() {
+  local t base
+  printf '%-10s  %-10s  %s\n' tool "built on" newest
+  while read -r t _; do
+    [[ -n "$t" ]] || continue
+    fetch "$t"
+    if base="$(base_of "$t" 2>/dev/null)"; then
+      printf '%-10s  %-10s  %s\n' "$t" "$(name_of "$t" "$base")" "$(newest "$t")"
+    else
+      printf '%-10s  %-10s  %s\n' "$t" "untracked" "$(newest "$t")"
+    fi
+  done < "$LIST"
+}
+
+case "${1:-}" in
+  "")
+    list
+    ;;
+  diff)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    need_tool "$2"
+    fetch "$2"
+    git diff "$(base_of "$2")^{tree}" "HEAD:$2"
+    ;;
+  track)
+    [[ $# -eq 3 ]] || { usage; exit 2; }
+    need_tool "$2"
+    need_clean
+    fetch "$2"
+    git merge -q -s ours --allow-unrelated-histories --no-edit \
+      -m "$2: built on upstream $3" "$(resolve "$2" "$3")"
+    echo "$2: built on upstream $3"
+    ;;
+  merge)
+    [[ $# -eq 3 ]] || { usage; exit 2; }
+    need_tool "$2"
+    need_clean
+    fetch "$2"
+    base_of "$2" >/dev/null
+    if git merge -q --no-ff -X "subtree=$2" -m "$2: upstream $3" "$(resolve "$2" "$3")"; then
+      echo "$2: now on upstream $3, with your changes kept"
+    else
+      echo "$2: these files clash with your changes:" >&2
+      git diff --name-only --diff-filter=U >&2
+      echo "fix them, then git add and git commit; or give up with git merge --abort" >&2
+      exit 1
+    fi
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
