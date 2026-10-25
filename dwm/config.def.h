@@ -38,7 +38,6 @@ static const Rule rules[] = {
 	{ "mpv",      NULL,       NULL,       0,            1,           -1 },
 	{ "Qemu",     NULL,       NULL,       0,            1,           -1 },
 	{ "floatterm", NULL,      NULL,       0,            1,           -1 },
-	{ "Firefox",  NULL,       NULL,       1 << 8,       0,           -1 },
 };
 
 /* layout(s) */

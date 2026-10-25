@@ -243,3 +243,11 @@ start_dwm_with_st() {
   [ "$(geometry "$second" WIDTH)" -gt 700 ]
   pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
 }
+
+@test "every rule sends windows to a tag that exists" {
+  local f="$REPO/dwm/config.def.h" ntags n
+  ntags=$(grep -m1 'tags\[\] *=' "$f" | grep -o '"[^"]*"' | wc -l)
+  while read -r n; do
+    [ "$n" -lt "$ntags" ] || { echo "a rule uses tag $((n + 1)) of $ntags"; return 1; }
+  done < <(sed -n '/^static const Rule rules/,/^};/p' "$f" | grep -oE '1 *<< *[0-9]+' | grep -oE '[0-9]+$')
+}
