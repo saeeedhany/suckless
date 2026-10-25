@@ -18,6 +18,7 @@
 #include <X11/extensions/Xrandr.h>
 #include <X11/keysym.h>
 #include <X11/Xlib.h>
+#include <X11/Xresource.h>
 #include <X11/Xutil.h>
 
 #include "arg.h"
@@ -45,7 +46,7 @@ struct xrandr {
 	int errbase;
 };
 
-#include "config.h"
+#include "config.def.h"
 
 static void
 die(const char *errstr, ...)
@@ -307,6 +308,25 @@ usage(void)
 	die("usage: slock [-v] [cmd [arg ...]]\n");
 }
 
+static void
+readxresources(Display *dpy)
+{
+	static const char *names[NUMCOLS] = {
+		[INIT] = "slock.init", [INPUT] = "slock.input", [FAILED] = "slock.failed",
+	};
+	char *rm, *type;
+	XrmDatabase db;
+	XrmValue v;
+	int i;
+
+	XrmInitialize();
+	if (!(rm = XResourceManagerString(dpy)) || !(db = XrmGetStringDatabase(rm)))
+		return;
+	for (i = 0; i < NUMCOLS; i++)
+		if (XrmGetResource(db, names[i], "*", &type, &v) && v.addr)
+			colorname[i] = v.addr;
+}
+
 int
 main(int argc, char **argv) {
 	struct xrandr rr;
@@ -350,6 +370,7 @@ main(int argc, char **argv) {
 
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("slock: cannot open display\n");
+	readxresources(dpy);
 
 	/* drop privileges */
 	if (setgroups(0, NULL) < 0)

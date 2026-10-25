@@ -50,6 +50,11 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
   left aligned. The cursor and selection still follow the logical order.
 - **dmenu** the BreadOnPenguins fork (center + xresources), plus a fix for a
   crash when no Xresources are loaded.
+- **slock** 1.7, built from `config.def.h` like the rest, dropping privileges to
+  `nobody` (Arch has no `nogroup`), with its colors read from Xresources
+  (`slock.init`, `slock.input`, `slock.failed`) so `theme` recolors it. It
+  installs setuid root, so it stays out of `make install`: run
+  `sudo make -C slock install` once, and again only when slock itself changes.
 - **dwmblocks** torrinfail's, with `blocks.def.h` rebuilt from my installed
   binary (its source was lost). Scripts live in dots: `config/dwmblocks/scripts/`.
 
