@@ -40,6 +40,10 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
   from Xresources no longer inherits the previous key's value, the reload
   runs in the main loop instead of the signal handler, and it no longer
   leaks an X connection per reload.
+  Arabic, Hebrew and Farsi read correctly: `st/bidi.c` uses FriBidi to put
+  right to left runs in visual order and join Arabic letters into their
+  presentation forms, one letter per cell, so the grid never shifts. Lines stay
+  left aligned. The cursor and selection still follow the logical order.
 - **dmenu** the BreadOnPenguins fork (center + xresources), plus a fix for a
   crash when no Xresources are loaded.
 - **dwmblocks** torrinfail's, with `blocks.def.h` rebuilt from my installed

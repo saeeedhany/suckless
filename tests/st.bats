@@ -47,3 +47,33 @@ teardown() {
   [ "$after" -le "$before" ] || { echo "sockets $before -> $after"; return 1; }
   kill -0 "$ST_PID"
 }
+
+bidi() {
+  cc -I"$WORK" "$REPO/tests/bidi_test.c" "$WORK/bidi.c" $(pkg-config --cflags --libs fribidi) -o "$BATS_TEST_TMPDIR/bidi" &&
+    "$BATS_TEST_TMPDIR/bidi"
+}
+
+@test "bidi: a line with no right to left text is drawn as it is" {
+  run bidi
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "same 006c:0 0073:1 0020:2 002d:3 006c:4" ]
+}
+
+@test "bidi: arabic is reordered and joined, one letter per cell, colors moving with letters" {
+  run bidi
+  [ "$status" -eq 0 ]
+  [ "${lines[1]}" = "copy 0061:0 0062:1 0020:2 fee1:6 fe8e:5 fee0:4 feb3:3" ]
+}
+
+@test "st links fribidi" {
+  ldd "$WORK/st" | grep -q libfribidi
+}
+
+@test "st survives drawing a line of mixed arabic and latin" {
+  start_xvfb
+  xrdb -load /dev/null
+  "$WORK/st" -e sh -c 'printf "ls سلام 123 (مرحبا)\n"; sleep 3' & ST_PID=$!
+  sleep 1.5
+  kill -0 "$ST_PID"
+  kill "$ST_PID"
+}

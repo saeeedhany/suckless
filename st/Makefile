@@ -4,7 +4,7 @@
 
 include config.mk
 
-SRC = st.c x.c
+SRC = st.c x.c bidi.c
 OBJ = $(SRC:.c=.o)
 
 all: st

@@ -109,6 +109,7 @@ size_t utf8encode(Rune, char *);
 
 void *xmalloc(size_t);
 void *xrealloc(void *, size_t);
+Line bidiline(Line, int);
 char *xstrdup(const char *);
 
 /* config.h globals */
