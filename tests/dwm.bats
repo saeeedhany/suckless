@@ -251,3 +251,9 @@ start_dwm_with_st() {
     [ "$n" -lt "$ntags" ] || { echo "a rule uses tag $((n + 1)) of $ntags"; return 1; }
   done < <(sed -n '/^static const Rule rules/,/^};/p' "$f" | grep -oE '1 *<< *[0-9]+' | grep -oE '[0-9]+$')
 }
+
+@test "windows wear a thin outline, the focused one a step brighter" {
+  grep -q 'borderpx  = 1;' "$REPO/dwm/config.def.h"
+  grep -q 'normbordercolor\[COLORLEN\] = "#4e4e4e"' "$REPO/dwm/config.def.h"
+  grep -q 'selbordercolor\[COLORLEN\]  = "#5a5a5a"' "$REPO/dwm/config.def.h"
+}

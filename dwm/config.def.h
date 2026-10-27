@@ -12,10 +12,10 @@ static const char dmenufont[]       = "monospace:size=10";
  * overrides them (dots: theme <name>); SIGHUP reloads them in place */
 #define COLORLEN 32
 static char normbgcolor[COLORLEN]     = "#282828";
-static char normbordercolor[COLORLEN] = "#282828";
+static char normbordercolor[COLORLEN] = "#4e4e4e";
 static char normfgcolor[COLORLEN]     = "#93877c";
 static char selbgcolor[COLORLEN]      = "#282828";
-static char selbordercolor[COLORLEN]  = "#282828";
+static char selbordercolor[COLORLEN]  = "#5a5a5a";
 static char selfgcolor[COLORLEN]      = "#ccc3b8";
 
 static char *colors[][3] = {
