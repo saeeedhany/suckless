@@ -41,7 +41,7 @@ which lists programs in the user's $PATH and runs the result in their $SHELL.
 dmenu appears at the bottom of the screen.
 .TP
 .B \-c
-dmenu appears centered on the screen.
+dmenu floats in the top right corner, under the bar, with a thin border.
 .TP
 .B \-f
 dmenu grabs the keyboard before reading stdin if not reading from a tty. This
@@ -137,13 +137,10 @@ Backspace
 Tab
 .TP
 .B C\-j
-Return
-.TP
-.B C\-J
-Shift-Return
+Down
 .TP
 .B C\-k
-Delete line right
+Up
 .TP
 .B C\-m
 Return

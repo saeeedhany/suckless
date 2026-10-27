@@ -365,17 +365,13 @@ keypress(XKeyEvent *ev)
 		case XK_g: ksym = XK_Escape;    break;
 		case XK_h: ksym = XK_BackSpace; break;
 		case XK_i: ksym = XK_Tab;       break;
-		case XK_j: /* fallthrough */
-		case XK_J: /* fallthrough */
+		case XK_j: ksym = XK_Down;      break;
+		case XK_k: ksym = XK_Up;        break;
 		case XK_m: /* fallthrough */
 		case XK_M: ksym = XK_Return; ev->state &= ~ControlMask; break;
 		case XK_n: ksym = XK_Down;      break;
 		case XK_p: ksym = XK_Up;        break;
 
-		case XK_k: /* delete right */
-			text[cursor] = '\0';
-			match();
-			break;
 		case XK_u: /* delete left */
 			insert(NULL, 0 - cursor);
 			break;
@@ -632,6 +628,7 @@ setup(void)
 	int x, y, i, j;
 	unsigned int du;
 	XSetWindowAttributes swa;
+	Clr border;
 	XIM xim;
 	Window w, dw, *dws;
 	XWindowAttributes wa;
@@ -686,8 +683,8 @@ setup(void)
 
 		if (centered) {
 			mw = MIN(MAX(max_textw() + promptw, min_width), info[i].width);
-			x = info[i].x_org + ((info[i].width  - mw) / 2);
-			y = info[i].y_org + ((info[i].height - mh) / menu_height_ratio);
+			x = info[i].x_org + info[i].width - mw - 2 * border_width - gap;
+			y = info[i].y_org + bh + gap;
 		} else {
 			x = info[i].x_org;
 			y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
@@ -704,8 +701,8 @@ setup(void)
 
 		if (centered) {
 			mw = MIN(MAX(max_textw() + promptw, min_width), wa.width);
-			x = (wa.width  - mw) / 2;
-			y = (wa.height - mh) / 2;
+			x = wa.width - mw - 2 * border_width - gap;
+			y = bh + gap;
 		} else {
 			x = 0;
 			y = topbar ? 0 : wa.height - mh;
@@ -720,9 +717,11 @@ setup(void)
 	swa.override_redirect = True;
 	swa.background_pixel = scheme[SchemeNorm][ColBg].pixel;
 	swa.event_mask = ExposureMask | KeyPressMask | VisibilityChangeMask;
-	win = XCreateWindow(dpy, root, x, y, mw, mh, 0,
+	win = XCreateWindow(dpy, root, x, y, mw, mh, centered ? border_width : 0,
 	                    CopyFromParent, CopyFromParent, CopyFromParent,
 	                    CWOverrideRedirect | CWBackPixel | CWEventMask, &swa);
+	drw_clr_create(drw, &border, bordercolor);
+	XSetWindowBorder(dpy, win, border.pixel);
 	XSetClassHint(dpy, win, &ch);
 
 	/* input methods */
@@ -784,6 +783,8 @@ readxresources(void) {
 			colors[SchemeSel][ColFg] = strdup(xval.addr);
 		else
 			colors[SchemeSel][ColFg] = strdup(colors[SchemeSel][ColFg]);
+		if (XrmGetResource(xdb, "dmenu.bordercolor", "*", &type, &xval))
+			bordercolor = strdup(xval.addr);
 
 		XrmDestroyDatabase(xdb);
 	} else {

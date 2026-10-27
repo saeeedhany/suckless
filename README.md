@@ -49,7 +49,10 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
   presentation forms, one letter per cell, so the grid never shifts. Lines stay
   left aligned. The cursor and selection still follow the logical order.
 - **dmenu** the BreadOnPenguins fork (center + xresources), plus a fix for a
-  crash when no Xresources are loaded.
+  crash when no Xresources are loaded. `ctrl j` and `ctrl k` move down and up
+  the list, like `ctrl n` and `ctrl p` (they used to be Return and delete right).
+  It floats in the top right corner under the bar, with a thin border in
+  `dmenu.bordercolor`.
 - **slock** 1.7, built from `config.def.h` like the rest, dropping privileges to
   `nobody` (Arch has no `nogroup`), with its colors read from Xresources
   (`slock.init`, `slock.input`, `slock.failed`) so `theme` recolors it. It
