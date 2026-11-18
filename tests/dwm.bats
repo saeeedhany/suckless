@@ -257,3 +257,58 @@ start_dwm_with_st() {
   grep -q 'normbordercolor\[COLORLEN\] = "#4e4e4e"' "$REPO/dwm/config.def.h"
   grep -q 'selbordercolor\[COLORLEN\]  = "#5a5a5a"' "$REPO/dwm/config.def.h"
 }
+
+@test "super shift p pins a floating window to the top right, on every tag" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  win=$(new_window ""); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  x=$(geometry "$win" X); y=$(geometry "$win" Y); w=$(geometry "$win" WIDTH)
+  [ $((800 - x - w)) -ge 0 ]
+  [ $((800 - x - w)) -le 20 ]
+  [ "$y" -lt 60 ]
+  xdotool key super+2; sleep 0.3
+  [ "$(geometry "$win" X)" -eq "$x" ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "unpinning on another tag sends the window home, centered" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  win=$(new_window ""); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  xdotool key super+2; sleep 0.3
+  [ "$(geometry "$win" X)" -ge 0 ]
+  xdotool key super+shift+p; sleep 0.3
+  [ "$(geometry "$win" X)" -lt 0 ]
+  kill -0 "$DWM_PID"
+  xdotool key super+1; sleep 0.3
+  x=$(geometry "$win" X); w=$(geometry "$win" WIDTH)
+  [ $(( x - (800 - w) / 2 )) -ge -10 ]
+  [ $(( x - (800 - w) / 2 )) -le 10 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "a pinned tiled window stays tiled and shows on every tag" {
+  start_dwm_with_st
+  xdotool key super+shift+Return
+  win=$(new_window ""); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  xdotool key super+2; sleep 0.3
+  [ "$(geometry "$win" X)" -ge 0 ]
+  [ "$(geometry "$win" X)" -lt 20 ]
+  [ "$(geometry "$win" WIDTH)" -gt 700 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "a pinned window stays pinned across a restart" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  win=$(new_window ""); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  kill -USR1 "$DWM_PID"; xsetroot -name "dots"; sleep 1
+  kill -0 "$DWM_PID"
+  xdotool key super+2; sleep 0.3
+  [ "$(geometry "$win" X)" -ge 0 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
