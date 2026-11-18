@@ -53,6 +53,7 @@ static Row *rows;
 static size_t nrows, rowcap, top;
 static struct timespec changed, firstchange;
 static int pending;
+static int sigpipe[2] = { -1, -1 };
 static volatile sig_atomic_t quitflag, reloadflag;
 static int trashed;
 static int lockfd = -1, haspos, pinned = 1, posx, posy, posw, posh;
@@ -121,7 +122,7 @@ readrect(int fd, Rect *r, int *pin, long *t)
 }
 
 static void
-writepos(void)
+writepos(int sync)
 {
 	char line[128];
 	int n;
@@ -129,7 +130,7 @@ writepos(void)
 	if (lockfd < 0 || !haspos)
 		return;
 	n = snprintf(line, sizeof line, "%d %d %d %d %d %ld\n", posx, posy, posw, posh, pinned, tags);
-	if (ftruncate(lockfd, 0) == 0 && pwrite(lockfd, line, n, 0) == n)
+	if (pwrite(lockfd, line, n, 0) == n && ftruncate(lockfd, n) == 0 && sync)
 		fsync(lockfd);
 }
 
@@ -241,10 +242,15 @@ static void
 pullonscreen(void)
 {
 	Rect sc[16], r = { posx, posy, posw, posh };
-	int i, n = screens(sc, LENGTH(sc)), best = 0;
+	int i, n = screens(sc, LENGTH(sc)), best = 0, on = 0;
 	long d, bestd = -1, dx, dy;
 
-	if (onscreen(&r))
+	for (i = 0; i < n && !on; i++)
+		if (overlaps(&r, &sc[i]))
+			on = 1, best = i;
+	posw = MAX(1, MIN(posw, sc[best].w));
+	posh = MAX(1, MIN(posh, sc[best].h));
+	if (on)
 		return;
 	for (i = 0; i < n; i++) {
 		dx = (posx + posw / 2) - (sc[i].x + sc[i].w / 2);
@@ -316,7 +322,13 @@ restoreall(const char *self)
 	struct dirent *e;
 	char other[64];
 	pid_t pid;
+	char exe[PATH_MAX];
+	ssize_t len;
 
+	if ((len = readlink("/proc/self/exe", exe, sizeof exe - 1)) > 0)
+		exe[len] = '\0';
+	else
+		snprintf(exe, sizeof exe, "%s", self);
 	if (!(d = opendir(dir)))
 		return;
 	while ((e = readdir(d))) {
@@ -328,9 +340,13 @@ restoreall(const char *self)
 			continue;
 		close(lockfd);
 		lockfd = -1;
-		if ((pid = fork()) == 0) {
+		if ((pid = fork()) < 0) {
+			perror("note: fork");
+			break;
+		}
+		if (pid == 0) {
 			setsid();
-			execlp(self, self, "-o", other, (char *)NULL);
+			execl(exe, "note", "-o", other, (char *)NULL);
 			_exit(1);
 		}
 	}
@@ -338,15 +354,29 @@ restoreall(const char *self)
 }
 
 static void
+wake(void)
+{
+	int saved = errno;
+	ssize_t r = 0;
+
+	if (sigpipe[1] >= 0)
+		r = write(sigpipe[1], "", 1);
+	(void)r;
+	errno = saved;
+}
+
+static void
 onquit(int sig)
 {
 	quitflag = 1;
+	wake();
 }
 
 static void
 onreload(int sig)
 {
 	reloadflag = 1;
+	wake();
 }
 
 static void
@@ -541,35 +571,48 @@ blank(void)
 	return 1;
 }
 
-static void
+static int
 writefile(const char *path, const char *s, size_t n)
 {
 	char tmp[PATH_MAX];
 	int fd;
 
 	if ((size_t)snprintf(tmp, sizeof tmp, "%s/.%s.tmp", dir, id) >= sizeof tmp)
-		return;
+		return 0;
 	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600)) < 0)
-		return;
+		return 0;
 	if (write(fd, s, n) != (ssize_t)n || fsync(fd) < 0) {
 		close(fd);
 		unlink(tmp);
-		return;
+		return 0;
 	}
 	close(fd);
-	rename(tmp, path);
+	if (rename(tmp, path) < 0) {
+		unlink(tmp);
+		return 0;
+	}
+	if ((fd = open(dir, O_RDONLY | O_DIRECTORY)) >= 0) {
+		fsync(fd);
+		close(fd);
+	}
+	return 1;
 }
 
-static void
+static int
 save(void)
 {
 	const char *s;
 	size_t n;
 
 	s = buftext(buf, &n);
-	writefile(txtpath, s, n);
-	bufclean(buf);
-	pending = 0;
+	if (writefile(txtpath, s, n)) {
+		bufclean(buf);
+		pending = 0;
+		return 1;
+	}
+	clock_gettime(CLOCK_MONOTONIC, &changed);
+	firstchange = changed;
+	return 0;
 }
 
 static void
@@ -712,15 +755,26 @@ paste(XSelectionEvent *ev)
 {
 	Atom type;
 	int format;
-	unsigned long n, after;
-	unsigned char *data = NULL;
+	unsigned long n, after, i, k = 0;
+	unsigned char *data = NULL, c;
+	char *clean;
 
 	if (ev->property == None)
 		return;
 	if (XGetWindowProperty(dpy, win, pasteprop, 0L, 1L << 20, True, AnyPropertyType,
-	    &type, &format, &n, &after, &data) == Success && data && format == 8 && type == utf8string) {
-		if (bufmode(buf) == ModeInsert)
-			bufinsert(buf, (char *)data, n);
+	    &type, &format, &n, &after, &data) == Success && data && format == 8 && type == utf8string &&
+	    bufmode(buf) == ModeInsert && (clean = malloc(2 * n + 1))) {
+		for (i = 0; i < n; i++) {
+			c = data[i];
+			if (c == '\t') {
+				clean[k++] = ' ';
+				clean[k++] = ' ';
+			} else if (c == '\n' || (c >= 0x20 && c != 0x7f)) {
+				clean[k++] = c;
+			}
+		}
+		bufinsert(buf, clean, k);
+		free(clean);
 	}
 	if (data)
 		XFree(data);
@@ -808,7 +862,7 @@ moved(XConfigureEvent *ev)
 	posw = r.w;
 	posh = r.h;
 	haspos = 1;
-	writepos();
+	writepos(0);
 }
 
 static void
@@ -838,9 +892,9 @@ setup(int fresh)
 	ww = 2 * padding + columns * charw;
 	wh = 2 * padding + lines * lineh;
 	if (haspos) {
+		pullonscreen();
 		ww = posw;
 		wh = posh;
-		pullonscreen();
 		usepos = 1;
 	} else if (fresh) {
 		usepos = place();
@@ -854,7 +908,7 @@ setup(int fresh)
 	pasteprop = XInternAtom(dpy, "NOTE_PASTE", False);
 
 	swa.background_pixel = scheme[ColBg].pixel;
-	swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask | PropertyChangeMask;
+	swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask | PropertyChangeMask | FocusChangeMask;
 	win = XCreateWindow(dpy, root, usepos ? posx : 0, usepos ? posy : 0, ww, wh, 0, CopyFromParent, CopyFromParent,
 		CopyFromParent, CWBackPixel | CWEventMask, &swa);
 	XSetClassHint(dpy, win, &ch);
@@ -872,6 +926,7 @@ setup(int fresh)
 	wmdelete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 	XSetWMProtocols(dpy, win, &wmdelete, 1);
 
+	XSetLocaleModifiers("");
 	if (!(xim = XOpenIM(dpy, NULL, NULL, NULL))) {
 		XSetLocaleModifiers("@im=none");
 		xim = XOpenIM(dpy, NULL, NULL, NULL);
@@ -899,7 +954,8 @@ static void
 run(void)
 {
 	XEvent ev;
-	struct pollfd pfd = { .fd = ConnectionNumber(dpy), .events = POLLIN };
+	struct pollfd pfd[2] = { { .fd = ConnectionNumber(dpy), .events = POLLIN }, { .fd = sigpipe[0], .events = POLLIN } };
+	char drain[64];
 	long left;
 
 	while (!quitflag) {
@@ -914,13 +970,19 @@ run(void)
 				if (ev.xexpose.count == 0)
 					draw();
 				break;
+			case FocusIn:
+				XSetICFocus(xic);
+				break;
+			case FocusOut:
+				XUnsetICFocus(xic);
+				break;
 			case PropertyNotify:
 				if (ev.xproperty.atom == netwmstate) {
 					pinned = hasatom(netwmstate, netsticky);
-					writepos();
+					writepos(1);
 				} else if (ev.xproperty.atom == clientinfo) {
 					readtags();
-					writepos();
+					writepos(1);
 				}
 				break;
 			case ConfigureNotify:
@@ -961,7 +1023,9 @@ run(void)
 				continue;
 			}
 		}
-		poll(&pfd, 1, left);
+		if (poll(pfd, 2, left) > 0 && (pfd[1].revents & POLLIN))
+			while (read(sigpipe[0], drain, sizeof drain) > 0)
+				;
 	}
 }
 
@@ -975,7 +1039,7 @@ ioerror(Display *d)
 		unlink(pospath);
 	} else {
 		save();
-		writepos();
+		writepos(1);
 	}
 	_exit(0);
 }
@@ -987,8 +1051,9 @@ cleanup(void)
 		unlink(txtpath);
 		unlink(pospath);
 	} else if (!trashed) {
-		save();
-		writepos();
+		if (!save())
+			fprintf(stderr, "note: could not save %s\n", txtpath);
+		writepos(1);
 	}
 	if (lockfd >= 0)
 		close(lockfd);
@@ -1026,6 +1091,12 @@ main(int argc, char *argv[])
 	struct sigaction sa;
 	int fresh = 1;
 
+	if (pipe(sigpipe) == 0) {
+		fcntl(sigpipe[0], F_SETFL, O_NONBLOCK);
+		fcntl(sigpipe[1], F_SETFL, O_NONBLOCK);
+		fcntl(sigpipe[0], F_SETFD, FD_CLOEXEC);
+		fcntl(sigpipe[1], F_SETFD, FD_CLOEXEC);
+	}
 	memset(&sa, 0, sizeof sa);
 	sa.sa_handler = onquit;
 	sigaction(SIGTERM, &sa, NULL);

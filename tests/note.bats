@@ -379,3 +379,46 @@ text_gap() {
   [ "$status" -ne 0 ]
   [ -d "$BATS_TEST_TMPDIR/notes/20260101-000000.txt" ]
 }
+
+@test "a new note is 36 by 12 cells, a little bigger than before" {
+  start_dwm_note
+  note & win=$(note_win)
+  [ "$(geometry "$win" WIDTH)" -ge 330 ]
+  [ "$(geometry "$win" HEIGHT)" -ge 225 ]
+}
+
+@test "pasting drops control bytes, keeps newlines and turns tabs into spaces" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  printf 'a\001b\r\nc\td' | xclip -selection clipboard
+  note & win=$(note_win)
+  xdotool key ctrl+shift+v; sleep 0.8
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "$(printf 'ab\nc  d')" ]
+}
+
+@test "a saved size bigger than the screen is shrunk to fit" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf big > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  echo "100 100 99999 99999 1 1" > "$BATS_TEST_TMPDIR/notes/.20260101-000000.pos"
+  start_dwm_note
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" WIDTH)" -le 800 ]
+  [ "$(geometry "$win" HEIGHT)" -le 600 ]
+}
+
+@test "a save that fails is tried again" {
+  start_dwm_note
+  note & win=$(note_win)
+  chmod 500 "$NOTES_DIR"
+  xdotool type "later"; sleep 0.8
+  chmod 700 "$NOTES_DIR"; sleep 1
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "later" ]
+}
+
+@test "note -r reopens notes even when note is not on PATH" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf here > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  (PATH=/usr/bin:/bin; exec -a note "$WORK/note" -r)
+  note_win >/dev/null
+}
