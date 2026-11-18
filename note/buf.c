@@ -390,7 +390,9 @@ operate(Buf *b, int op, int key, size_t count)
 	if (key != 'w')
 		return;
 	if (op == 'c' && class(b, b->cur) != 0) {
-		while (count-- > 0)
+		if (next(b, to) < b->n && class(b, next(b, to)) == class(b, to))
+			to = wordend(b, to);
+		while (--count > 0)
 			to = wordend(b, to);
 		to = next(b, to);
 	} else {

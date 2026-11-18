@@ -6,3 +6,4 @@ static const unsigned int padding = 8;
 static const unsigned int columns = 30;
 static const unsigned int lines = 9;
 static const unsigned int savedelay = 300;
+static const unsigned int maxsavedelay = 2000;

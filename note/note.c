@@ -51,13 +51,15 @@ static char dir[PATH_MAX], id[64], txtpath[PATH_MAX], pospath[PATH_MAX];
 static unsigned int ww, wh, lineh, charw;
 static Row *rows;
 static size_t nrows, rowcap, top;
-static struct timespec changed;
+static struct timespec changed, firstchange;
+static int pending;
 static volatile sig_atomic_t quitflag, reloadflag;
 static int trashed;
 static int lockfd = -1, haspos, pinned = 1, posx, posy, posw, posh;
 static long tags;
 
 static void setpaths(void);
+static int ioerror(Display *d);
 
 static long
 msecsince(struct timespec *t)
@@ -212,6 +214,18 @@ screens(Rect *out, int max)
 }
 
 static int
+monitorat(int x, int y)
+{
+	Rect sc[16];
+	int i, n = screens(sc, LENGTH(sc));
+
+	for (i = 0; i < n; i++)
+		if (x >= sc[i].x && x < sc[i].x + sc[i].w && y >= sc[i].y && y < sc[i].y + sc[i].h)
+			return i;
+	return 0;
+}
+
+static int
 onscreen(Rect *r)
 {
 	Rect sc[16];
@@ -341,8 +355,14 @@ resource(XrmDatabase db, const char *name, char *dst, size_t n)
 	char *type;
 	XrmValue v;
 
-	if (XrmGetResource(db, name, name, &type, &v) && v.addr && v.addr[0] == '#' && strlen(v.addr) == n - 1)
-		memcpy(dst, v.addr, n);
+	size_t i;
+
+	if (!XrmGetResource(db, name, name, &type, &v) || !v.addr || v.addr[0] != '#' || strlen(v.addr) != n - 1)
+		return;
+	for (i = 1; i < n - 1; i++)
+		if (!isxdigit((unsigned char)v.addr[i]))
+			return;
+	memcpy(dst, v.addr, n);
 }
 
 static void
@@ -396,11 +416,14 @@ utf8len(unsigned char c)
 static unsigned int
 textw(const char *s, size_t n)
 {
-	unsigned int w = 0, h;
+	char tmp[4096];
 
-	if (n)
-		drw_font_getexts(drw->fonts, s, n, &w, &h);
-	return w;
+	if (!n)
+		return 0;
+	n = MIN(n, sizeof tmp - 1);
+	memcpy(tmp, s, n);
+	tmp[n] = '\0';
+	return drw_fontset_getwidth(drw, tmp);
 }
 
 static void
@@ -430,7 +453,7 @@ layout(void)
 		w = 0;
 		space = 0;
 		for (i = start; i < n && s[i] != '\n'; i += len) {
-			len = utf8len(s[i]);
+			len = MIN((size_t)utf8len(s[i]), n - i);
 			w += textw(s + i, len);
 			if (w > avail && i > start)
 				break;
@@ -496,7 +519,7 @@ draw(void)
 	if (bufmode(buf) == ModeInsert) {
 		drw_rect(drw, x, y, 2, lineh, 1, 1);
 	} else {
-		len = cur < n && s[cur] != '\n' ? utf8len(s[cur]) : 0;
+		len = cur < n && s[cur] != '\n' ? MIN((size_t)utf8len(s[cur]), n - cur) : 0;
 		cw = len ? textw(s + cur, len) : charw;
 		memcpy(line, len ? s + cur : " ", len ? len : 1);
 		line[len ? len : 1] = '\0';
@@ -546,6 +569,19 @@ save(void)
 	s = buftext(buf, &n);
 	writefile(txtpath, s, n);
 	bufclean(buf);
+	pending = 0;
+}
+
+static void
+touched(void)
+{
+	if (!bufdirty(buf))
+		return;
+	clock_gettime(CLOCK_MONOTONIC, &changed);
+	if (!pending) {
+		firstchange = changed;
+		pending = 1;
+	}
 }
 
 static void
@@ -596,8 +632,9 @@ load(void)
 				die("realloc:");
 		}
 		r = read(fd, s + n, cap - n);
-		if (r > 0)
-			n += r;
+		if (r < 0)
+			die("note: cannot read %s:", txtpath);
+		n += r;
 	} while (r > 0);
 	close(fd);
 	bufload(buf, s ? s : "", n);
@@ -681,7 +718,7 @@ paste(XSelectionEvent *ev)
 	if (ev->property == None)
 		return;
 	if (XGetWindowProperty(dpy, win, pasteprop, 0L, 1L << 20, True, AnyPropertyType,
-	    &type, &format, &n, &after, &data) == Success && data && format == 8) {
+	    &type, &format, &n, &after, &data) == Success && data && format == 8 && type == utf8string) {
 		if (bufmode(buf) == ModeInsert)
 			bufinsert(buf, (char *)data, n);
 	}
@@ -788,6 +825,7 @@ setup(int fresh)
 		fputs("note: no locale support\n", stderr);
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("note: cannot open display");
+	XSetIOErrorHandler(ioerror);
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
 	drw = drw_create(dpy, screen, root, 1, 1);
@@ -847,7 +885,7 @@ setup(int fresh)
 		XChangeProperty(dpy, win, netwmstate, XA_ATOM, 32, PropModeReplace, (unsigned char *)&netsticky, 1);
 	if (tags) {
 		info[0] = tags;
-		info[1] = 0;
+		info[1] = monitorat(posx + ww / 2, posy + wh / 2);
 		info[2] = 1;
 		XChangeProperty(dpy, win, clientinfo, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)info, 3);
 	}
@@ -896,14 +934,12 @@ run(void)
 				break;
 			case KeyPress:
 				keypress(&ev.xkey);
-				if (bufdirty(buf))
-					clock_gettime(CLOCK_MONOTONIC, &changed);
+				touched();
 				draw();
 				break;
 			case SelectionNotify:
 				paste(&ev.xselection);
-				if (bufdirty(buf))
-					clock_gettime(CLOCK_MONOTONIC, &changed);
+				touched();
 				draw();
 				break;
 			case ClientMessage:
@@ -919,7 +955,7 @@ run(void)
 		}
 		left = -1;
 		if (bufdirty(buf)) {
-			left = savedelay - msecsince(&changed);
+			left = MIN((long)savedelay - msecsince(&changed), (long)maxsavedelay - msecsince(&firstchange));
 			if (left <= 0) {
 				save();
 				continue;
@@ -927,6 +963,21 @@ run(void)
 		}
 		poll(&pfd, 1, left);
 	}
+}
+
+static int
+ioerror(Display *d)
+{
+	if (trashed)
+		_exit(0);
+	if (blank()) {
+		unlink(txtpath);
+		unlink(pospath);
+	} else {
+		save();
+		writepos();
+	}
+	_exit(0);
 }
 
 static void

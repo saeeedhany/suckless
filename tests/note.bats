@@ -269,3 +269,113 @@ geometry() { xdotool getwindowgeometry --shell "$1" | grep -E "^$2=" | cut -d= -
   make -C "$WORK" >/dev/null
   grep -qa note.background "$WORK/note"
 }
+
+@test "steady typing with no pause is still saved" {
+  start_dwm_note
+  note & pid=$!; win=$(note_win)
+  xdotool type --delay 150 "abcdefghijklmnopqrstuvwxyz"
+  kill -9 "$pid"
+  [ "$(wc -c < "$NOTES_DIR"/*.txt)" -ge 10 ]
+}
+
+@test "a dwm restart leaves focus where it was, not on a note" {
+  start_dwm_note
+  rsync -a "$REPO/st/" "$BATS_TEST_TMPDIR/stsrc/"
+  make -C "$BATS_TEST_TMPDIR/stsrc" >/dev/null 2>&1
+  note & win=$(note_win)
+  xdotool type "keep"; xdotool key Escape; sleep 0.6
+  "$BATS_TEST_TMPDIR/stsrc/st" & term=$(new_window ""); sleep 0.5
+  [ "$(xdotool getactivewindow)" = "$term" ]
+  kill -USR1 "$DWM_PID"; xsetroot -name dots; sleep 1
+  [ "$(xdotool getactivewindow)" = "$term" ]
+  xdotool type "x"; sleep 0.6
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "keep" ]
+  pkill -f "$BATS_TEST_TMPDIR/stsrc/st" || true
+}
+
+@test "a note file with broken utf8 opens without reading past its text" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'abc\342' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  rsync -a "$REPO/note/" "$BATS_TEST_TMPDIR/asan/"
+  make -C "$BATS_TEST_TMPDIR/asan" clean >/dev/null
+  make -C "$BATS_TEST_TMPDIR/asan" CC="cc -fsanitize=address -g" note >/dev/null 2>&1
+  start_dwm_note
+  ASAN_OPTIONS=detect_leaks=0 "$BATS_TEST_TMPDIR/asan/note" -o 20260101-000000 2>"$BATS_TEST_TMPDIR/asan.log" & pid=$!
+  win=$(note_win); sleep 0.5
+  kill -0 "$pid"
+  ! grep -q AddressSanitizer "$BATS_TEST_TMPDIR/asan.log"
+}
+
+text_gap() {
+  xwd -id "$1" -silent | magick xwd:- txt:- 2>/dev/null |
+    sed -nE 's/^ *([0-9]+), *([0-9]+):.*(#[0-9A-Fa-f]{6}).*/\1 \2 \3/p' | awk '
+    $2 >= 9 && $2 < 26 && $1 > 0 {
+      c = tolower($3)
+      if (c == "#c2a46a") { if (bar == "" || $1 < bar) bar = $1 }
+      else if (c != "#222424" && c != "#5a5a5a" && c != "#4e4e4e") { if ($1 > txt) txt = $1 }
+    }
+    END { if (bar == "" || txt == "") print -999; else print bar - txt }'
+}
+
+@test "arabic text is measured with the font that draws it, so the cursor sits right after it" {
+  start_dwm_note
+  setxkbmap -layout ara
+  note & win=$(note_win)
+  xdotool type "سلامسلامسلام"; sleep 0.4
+  gap=$(text_gap "$win")
+  [ "$gap" -ge 0 ]
+  [ "$gap" -le 4 ]
+}
+
+@test "on two monitors an unpinned note comes back on its monitor and tag" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'right' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  echo "900 100 240 180 0 4" > "$BATS_TEST_TMPDIR/notes/.20260101-000000.pos"
+  rsync -a "$REPO/dwm/" "$BATS_TEST_TMPDIR/dwm/"
+  make -C "$BATS_TEST_TMPDIR/dwm" >/dev/null 2>&1
+  make -C "$WORK" >/dev/null
+  export PATH="$WORK:$PATH" NOTES_DIR="$BATS_TEST_TMPDIR/notes" DISPLAY=:99
+  Xvfb :99 -screen 0 1600x600x24 -nolisten tcp -noreset >/dev/null 2>&1 & XVFB_PID=$!
+  for i in $(seq 50); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.1; done
+  xrandr --setmonitor left 800/200x600/150+0+0 screen >/dev/null
+  xrandr --setmonitor right 800/200x600/150+800+0 none >/dev/null
+  xrdb -load /dev/null
+  "$BATS_TEST_TMPDIR/dwm/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" X)" -lt 0 ]
+  xdotool mousemove 1200 300; sleep 0.2; xdotool key super+3; sleep 0.4
+  [ "$(geometry "$win" X)" -ge 800 ]
+}
+
+@test "logging out saves what was typed" {
+  start_dwm_note
+  note & pid=$!; win=$(note_win)
+  xdotool type "bye"
+  kill "$XVFB_PID"; sleep 0.8
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "bye" ]
+}
+
+@test "logging out with an empty note leaves nothing behind" {
+  start_dwm_note
+  note & note_win >/dev/null
+  kill "$XVFB_PID"; sleep 0.8
+  [ -z "$(ls -A "$NOTES_DIR")" ]
+}
+
+@test "a bad color in X resources is ignored" {
+  start_dwm_note
+  printf 'note.background: #zzzzzz\n' | xrdb -merge
+  note & pid=$!; win=$(note_win)
+  sleep 0.3
+  kill -0 "$pid"
+}
+
+@test "a note that cannot be read is not opened, so it cannot be emptied" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  run timeout 5 note -o 20260101-000000
+  [ "$status" -ne 0 ]
+  [ -d "$BATS_TEST_TMPDIR/notes/20260101-000000.txt" ]
+}

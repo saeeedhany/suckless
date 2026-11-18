@@ -117,6 +117,8 @@ main(void)
 	check("dw", "one two", 0, ModeNormal, "dw", "two", 0, ModeNormal);
 	check("D", "abcd", 1, ModeNormal, "D", "a", 0, ModeNormal);
 	check("cw", "one two", 0, ModeNormal, "cwXY\x1b", "XY two", 1, ModeNormal);
+	check("cw one letter word", "a b", 0, ModeNormal, "cwX\x1b", "X b", 0, ModeNormal);
+	check("cw on last letter", "foo bar", 2, ModeNormal, "cwX\x1b", "foX bar", 2, ModeNormal);
 	check("cc", "ab\ncd", 0, ModeNormal, "ccz\x1b", "z\ncd", 0, ModeNormal);
 	check("C", "abcd", 1, ModeNormal, "Cz\x1b", "az", 1, ModeNormal);
 	check("r", "abc", 1, ModeNormal, "rZ", "aZc", 1, ModeNormal);
