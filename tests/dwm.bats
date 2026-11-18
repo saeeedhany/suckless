@@ -306,10 +306,12 @@ start_dwm_with_st() {
   xdotool key super+ctrl+Return
   win=$(new_window ""); sleep 0.5
   xdotool key super+shift+p; sleep 0.3
+  x=$(geometry "$win" X); y=$(geometry "$win" Y)
   kill -USR1 "$DWM_PID"; xsetroot -name "dots"; sleep 1
   kill -0 "$DWM_PID"
   xdotool key super+2; sleep 0.3
-  [ "$(geometry "$win" X)" -ge 0 ]
+  [ "$(geometry "$win" X)" -eq "$x" ]
+  [ "$(geometry "$win" Y)" -eq "$y" ]
   pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
 }
 
@@ -324,5 +326,51 @@ start_dwm_with_st() {
   xprop -id "$win" WM_CLASS | grep -q '"note"'
   [ "$(geometry "$win" WIDTH)" -lt 500 ]
   [ "$(geometry "$win" X)" -gt 100 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "unpinning on another tag hands focus to a window on that tag" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  note=$(new_window ""); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  xdotool key super+2; sleep 0.3
+  xdotool key super+shift+Return
+  term=$(new_window "$note"); sleep 0.5
+  for i in 1 2 3; do [ "$(xdotool getactivewindow)" = "$note" ] && break; xdotool key super+j; sleep 0.2; done
+  [ "$(xdotool getactivewindow)" = "$note" ]
+  xdotool key super+shift+p; sleep 0.3
+  [ "$(xdotool getactivewindow)" = "$term" ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "a pinned window does not take focus when switching tags" {
+  start_dwm_with_st
+  xdotool key super+shift+Return
+  term=$(new_window ""); sleep 0.5
+  xdotool key super+shift+2; sleep 0.3
+  xdotool key super+ctrl+Return
+  note=$(new_window "$term"); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  xdotool key super+2; sleep 0.3
+  [ "$(xdotool getactivewindow)" = "$term" ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "pinning a fullscreen window keeps it fullscreen, and both states survive a restart" {
+  start_dwm_with_st
+  xdotool key super+ctrl+Return
+  win=$(new_window ""); sleep 0.5
+  xdotool windowstate --add FULLSCREEN "$win"; sleep 0.3
+  xdotool key super+shift+p; sleep 0.3
+  [ "$(geometry "$win" X)" -eq 0 ]
+  [ "$(geometry "$win" Y)" -eq 0 ]
+  [ "$(geometry "$win" WIDTH)" -eq 800 ]
+  xprop -id "$win" _NET_WM_STATE | grep -q _NET_WM_STATE_FULLSCREEN
+  xprop -id "$win" _NET_WM_STATE | grep -q _NET_WM_STATE_STICKY
+  kill -USR1 "$DWM_PID"; xsetroot -name "dots"; sleep 1
+  xdotool key super+2; sleep 0.3
+  [ "$(geometry "$win" X)" -eq 0 ]
+  [ "$(geometry "$win" WIDTH)" -eq 800 ]
   pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
 }

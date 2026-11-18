@@ -185,6 +185,7 @@ static void focusin(XEvent *e);
 static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
 static Atom getatomprop(Client *c, Atom prop);
+static int hasatom(Client *c, Atom prop, Atom want);
 static int getrootptr(int *x, int *y);
 static long getstate(Window w);
 static int gettextprop(Window w, Atom atom, char *text, unsigned int size);
@@ -215,6 +216,7 @@ static void sendmon(Client *c, Monitor *m);
 static void setclientstate(Client *c, long state);
 static void setfocus(Client *c);
 static void setfullscreen(Client *c, int fullscreen);
+static void setnetwmstate(Client *c);
 static void setsticky(Client *c, int sticky);
 static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
@@ -831,8 +833,11 @@ expose(XEvent *e)
 void
 focus(Client *c)
 {
-	if (!c || !ISVISIBLE(c))
-		for (c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
+	if (!c || !ISVISIBLE(c)) {
+		for (c = selmon->stack; c && (!ISVISIBLE(c) || c->issticky); c = c->snext);
+		if (!c)
+			for (c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
+	}
 	if (selmon->sel && selmon->sel != c)
 		unfocus(selmon->sel, 0);
 	if (c) {
@@ -918,6 +923,24 @@ getatomprop(Client *c, Atom prop)
 		XFree(p);
 	}
 	return atom;
+}
+
+int
+hasatom(Client *c, Atom prop, Atom want)
+{
+	int di, found = 0;
+	unsigned long i, nitems, dl;
+	unsigned char *p = NULL;
+	Atom da;
+
+	if (XGetWindowProperty(dpy, c->win, prop, 0L, 32L, False, XA_ATOM,
+		&da, &di, &nitems, &dl, &p) == Success && p) {
+		for (i = 0; i < nitems; i++)
+			if (((Atom *)p)[i] == want)
+				found = 1;
+		XFree(p);
+	}
+	return found;
 }
 
 int
@@ -1112,8 +1135,16 @@ manage(Window w, XWindowAttributes *wa)
 	updatewindowtype(c);
 	updatesizehints(c);
 	updatewmhints(c);
-	c->x = c->mon->mx + (c->mon->mw - WIDTH(c)) / 2;
-	c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
+	if (c->isfullscreen) {
+		c->x = c->mon->mx;
+		c->y = c->mon->my;
+	} else if (c->issticky && c->isfloating) {
+		c->x = c->mon->wx + c->mon->ww - WIDTH(c);
+		c->y = c->mon->wy + gappx;
+	} else {
+		c->x = c->mon->mx + (c->mon->mw - WIDTH(c)) / 2;
+		c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
+	}
 	XSelectInput(dpy, w, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
 	grabbuttons(c, 0);
 	if (floatnext && time(NULL) <= floatnext) {
@@ -1579,9 +1610,8 @@ void
 setfullscreen(Client *c, int fullscreen)
 {
 	if (fullscreen && !c->isfullscreen) {
-		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
-			PropModeReplace, (unsigned char*)&netatom[NetWMFullscreen], 1);
 		c->isfullscreen = 1;
+		setnetwmstate(c);
 		c->oldstate = c->isfloating;
 		c->oldbw = c->bw;
 		c->bw = 0;
@@ -1589,9 +1619,8 @@ setfullscreen(Client *c, int fullscreen)
 		resizeclient(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
 		XRaiseWindow(dpy, c->win);
 	} else if (!fullscreen && c->isfullscreen){
-		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
-			PropModeReplace, (unsigned char*)0, 0);
 		c->isfullscreen = 0;
+		setnetwmstate(c);
 		c->isfloating = c->oldstate;
 		c->bw = c->oldbw;
 		c->x = c->oldx;
@@ -1604,19 +1633,31 @@ setfullscreen(Client *c, int fullscreen)
 }
 
 void
+setnetwmstate(Client *c)
+{
+	Atom state[2];
+	int n = 0;
+
+	if (c->isfullscreen)
+		state[n++] = netatom[NetWMFullscreen];
+	if (c->issticky)
+		state[n++] = netatom[NetWMSticky];
+	XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
+		PropModeReplace, (unsigned char *)state, n);
+}
+
+void
 setsticky(Client *c, int sticky)
 {
 	if (sticky && !c->issticky) {
-		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
-			PropModeReplace, (unsigned char *) &netatom[NetWMSticky], 1);
 		c->issticky = 1;
-		if (c->isfloating)
+		setnetwmstate(c);
+		if (c->isfloating && !c->isfullscreen)
 			resize(c, c->mon->wx + c->mon->ww - WIDTH(c), c->mon->wy + gappx, c->w, c->h, 0);
 	} else if (!sticky && c->issticky) {
-		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
-			PropModeReplace, (unsigned char *)0, 0);
 		c->issticky = 0;
-		if (c->isfloating)
+		setnetwmstate(c);
+		if (c->isfloating && !c->isfullscreen)
 			resize(c, c->mon->mx + (c->mon->mw - WIDTH(c)) / 2,
 				c->mon->my + (c->mon->mh - HEIGHT(c)) / 2, c->w, c->h, 0);
 		arrange(c->mon);
@@ -1958,9 +1999,13 @@ togglefloating(const Arg *arg)
 void
 togglesticky(const Arg *arg)
 {
-	if (!selmon->sel)
+	Client *c = selmon->sel;
+
+	if (!c)
 		return;
-	setsticky(selmon->sel, !selmon->sel->issticky);
+	setsticky(c, !c->issticky);
+	if (!ISVISIBLE(c))
+		focus(NULL);
 	arrange(selmon);
 }
 
@@ -2256,12 +2301,13 @@ updatetitle(Client *c)
 void
 updatewindowtype(Client *c)
 {
-	Atom state = getatomprop(c, netatom[NetWMState]);
+	int fullscreen = hasatom(c, netatom[NetWMState], netatom[NetWMFullscreen]);
+	int sticky = hasatom(c, netatom[NetWMState], netatom[NetWMSticky]);
 	Atom wtype = getatomprop(c, netatom[NetWMWindowType]);
 
-	if (state == netatom[NetWMFullscreen])
+	if (fullscreen)
 		setfullscreen(c, 1);
-	if (state == netatom[NetWMSticky])
+	if (sticky)
 		setsticky(c, 1);
 	if (wtype == netatom[NetWMWindowTypeDialog])
 		c->isfloating = 1;
