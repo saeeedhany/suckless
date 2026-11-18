@@ -312,3 +312,17 @@ start_dwm_with_st() {
   [ "$(geometry "$win" X)" -ge 0 ]
   pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
 }
+
+@test "super n runs note, and note windows float centered" {
+  mkdir -p "$BATS_TEST_TMPDIR/notebin"
+  printf '#!/bin/sh\nexec st -c note -g 40x12\n' > "$BATS_TEST_TMPDIR/notebin/note"
+  chmod +x "$BATS_TEST_TMPDIR/notebin/note"
+  export PATH="$BATS_TEST_TMPDIR/notebin:$PATH"
+  start_dwm_with_st
+  xdotool key super+n
+  win=$(new_window ""); sleep 0.5
+  xprop -id "$win" WM_CLASS | grep -q '"note"'
+  [ "$(geometry "$win" WIDTH)" -lt 500 ]
+  [ "$(geometry "$win" X)" -gt 100 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}

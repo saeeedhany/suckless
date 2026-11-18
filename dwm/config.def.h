@@ -38,6 +38,7 @@ static const Rule rules[] = {
 	{ "mpv",      NULL,       NULL,       0,            1,           -1 },
 	{ "Qemu",     NULL,       NULL,       0,            1,           -1 },
 	{ "floatterm", NULL,      NULL,       0,            1,           -1 },
+	{ "note",     NULL,       NULL,       0,            1,           -1 },
 };
 
 /* layout(s) */
@@ -72,6 +73,7 @@ static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() 
 static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, NULL };
 static const char *termcmd[]  = { "st", NULL };
 static const char *floattermcmd[] = { "st", "-c", "floatterm", NULL };
+static const char *notecmd[]  = { "note", NULL };
 static const char *webcmd[]   = { "firefox", "--new-window", NULL };
 
 /* Xresources preferences loaded at startup */
@@ -90,6 +92,7 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask,             XK_Return, spawn,          {.v = termcmd } },
 	{ MODKEY|ControlMask,           XK_Return, spawn,          {.v = floattermcmd } },
 	{ MODKEY|ControlMask,           XK_w,      spawnfloat,     {.v = webcmd } },
+	{ MODKEY,                       XK_n,      spawn,          {.v = notecmd } },
 	{ MODKEY,                       XK_b,      togglebar,      {0} },
 	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
 	{ MODKEY,                       XK_k,      focusstack,     {.i = -1 } },
