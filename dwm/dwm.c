@@ -225,7 +225,7 @@ static void seturgent(Client *c, int urg);
 static void showhide(Client *c);
 static void sighup(int unused);
 static void sigusr1(int unused);
-static void getclienttagprop(Client *c);
+static int getclienttagprop(Client *c);
 static void setclienttagprop(Client *c);
 static void reloadcolors(void);
 static void sigterm(int unused);
@@ -293,6 +293,7 @@ static volatile sig_atomic_t reloadpending = 0;
 static volatile sig_atomic_t restartpending = 0;
 static time_t floatnext = 0;
 static int running = 1;
+static int scanning;
 static Cur *cursor[CurLast];
 static Clr **scheme;
 static Display *dpy;
@@ -1103,7 +1104,7 @@ manage(Window w, XWindowAttributes *wa)
 	XWindowChanges wc;
 	XSizeHints hints;
 	long supplied;
-	int usposition;
+	int usposition, tagged = 0;
 
 	usposition = XGetWMNormalHints(dpy, w, &hints, &supplied) && (hints.flags & USPosition);
 	c = ecalloc(1, sizeof(Client));
@@ -1122,10 +1123,10 @@ manage(Window w, XWindowAttributes *wa)
 	} else {
 		c->mon = selmon;
 		applyrules(c);
-		getclienttagprop(c);
+		tagged = getclienttagprop(c);
 	}
 	usposition = usposition && c->isfloating;
-	if (usposition && (m = recttomon(c->x, c->y, c->w, c->h)) != c->mon) {
+	if (usposition && !tagged && (m = recttomon(c->x, c->y, c->w, c->h)) != c->mon) {
 		c->mon = m;
 		c->tags = m->tagset[m->seltags];
 	}
@@ -1187,7 +1188,7 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon);
 	XMapWindow(dpy, c->win);
-	focus(ISVISIBLE(c) ? c : NULL);
+	focus(!scanning && ISVISIBLE(c) && c->mon == selmon ? c : NULL);
 }
 
 void
@@ -1533,6 +1534,7 @@ scan(void)
 	Window d1, d2, *wins = NULL;
 	XWindowAttributes wa;
 
+	scanning = 1;
 	if (XQueryTree(dpy, root, &d1, &d2, &wins, &num)) {
 		for (i = 0; i < num; i++) {
 			if (!XGetWindowAttributes(dpy, wins[i], &wa)
@@ -1551,6 +1553,7 @@ scan(void)
 		if (wins)
 			XFree(wins);
 	}
+	scanning = 0;
 }
 
 void
@@ -1867,7 +1870,7 @@ sigusr1(int unused)
 	restartpending = 1;
 }
 
-void
+int
 getclienttagprop(Client *c)
 {
 	Atom type;
@@ -1876,11 +1879,13 @@ getclienttagprop(Client *c)
 	unsigned char *data = NULL;
 	long *v;
 	Monitor *m;
+	int found = 0;
 
 	if (XGetWindowProperty(dpy, c->win, netatom[NetClientInfo], 0L, 3L, False, XA_CARDINAL,
 	    &type, &format, &n, &after, &data) == Success && data && n >= 2) {
 		v = (long *)data;
 		if (v[0] & TAGMASK) {
+			found = 1;
 			c->tags = v[0] & TAGMASK;
 			for (m = mons; m; m = m->next)
 				if (m->num == v[1])
@@ -1891,6 +1896,7 @@ getclienttagprop(Client *c)
 	}
 	if (data)
 		XFree(data);
+	return found;
 }
 
 void
