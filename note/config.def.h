@@ -1,5 +1,5 @@
 static const char *fonts[] = { "0xProto Nerd Font:size=10:antialias=true:autohint=true" };
-static char background[8] = "#222424";
+static char palette[][8] = { "#222424", "#4a4435", "#3d4136", "#383e43", "#483533" };
 static char foreground[8] = "#c8c5bf";
 static char cursorcolor[8] = "#c2a46a";
 static const unsigned int padding = 8;

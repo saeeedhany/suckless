@@ -422,3 +422,38 @@ text_gap() {
   (PATH=/usr/bin:/bin; exec -a note "$WORK/note" -r)
   note_win >/dev/null
 }
+
+@test "ctrl shift c cycles the note color and the color is remembered" {
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "tinted"
+  x=$(( $(geometry "$win" X) + 3 )); y=$(( $(geometry "$win" Y) + 3 ))
+  wait_for_pixel "$x" "$y" '#222424'
+  xdotool key ctrl+shift+c
+  wait_for_pixel "$x" "$y" '#4a4435'
+  xdotool key ctrl+shift+c
+  wait_for_pixel "$x" "$y" '#3d4136'
+  sleep 0.5
+  [ "$(cut -d' ' -f7 "$NOTES_DIR"/.*.pos)" = 2 ]
+  xdotool key super+shift+c; sleep 0.5
+  note -r; win=$(note_win)
+  wait_for_pixel $(( $(geometry "$win" X) + 3 )) $(( $(geometry "$win" Y) + 3 )) '#3d4136'
+}
+
+@test "the five note colors come from X resources" {
+  start_dwm_note
+  printf 'note.color1: #112233\n' | xrdb -merge
+  note & win=$(note_win)
+  xdotool key ctrl+shift+c
+  wait_for_pixel $(( $(geometry "$win" X) + 3 )) $(( $(geometry "$win" Y) + 3 )) '#112233'
+}
+
+@test "an old six field position file still opens with the plain color" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf old > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  echo "100 100 300 200 1 1" > "$BATS_TEST_TMPDIR/notes/.20260101-000000.pos"
+  start_dwm_note
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" X)" -eq 100 ]
+  wait_for_pixel 103 103 '#222424'
+}

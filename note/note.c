@@ -58,6 +58,7 @@ static volatile sig_atomic_t quitflag, reloadflag;
 static int trashed;
 static int lockfd = -1, haspos, pinned = 1, posx, posy, posw, posh;
 static long tags;
+static int color;
 
 static void setpaths(void);
 static int ioerror(Display *d);
@@ -102,22 +103,24 @@ notename(const char *name, char *idout, size_t n)
 }
 
 static int
-readrect(int fd, Rect *r, int *pin, long *t)
+readrect(int fd, Rect *r, int *pin, long *t, int *col)
 {
 	char line[128];
 	ssize_t n = pread(fd, line, sizeof line - 1, 0);
-	int p;
+	int p, c = 0;
 	long tg;
 
 	if (n <= 0)
 		return 0;
 	line[n] = '\0';
-	if (sscanf(line, "%d %d %d %d %d %ld", &r->x, &r->y, &r->w, &r->h, &p, &tg) != 6 || r->w <= 0 || r->h <= 0)
+	if (sscanf(line, "%d %d %d %d %d %ld %d", &r->x, &r->y, &r->w, &r->h, &p, &tg, &c) < 6 || r->w <= 0 || r->h <= 0)
 		return 0;
 	if (pin)
 		*pin = p != 0;
 	if (t)
 		*t = tg;
+	if (col)
+		*col = c >= 0 && c < (int)LENGTH(palette) ? c : 0;
 	return 1;
 }
 
@@ -129,7 +132,7 @@ writepos(int sync)
 
 	if (lockfd < 0 || !haspos)
 		return;
-	n = snprintf(line, sizeof line, "%d %d %d %d %d %ld\n", posx, posy, posw, posh, pinned, tags);
+	n = snprintf(line, sizeof line, "%d %d %d %d %d %ld %d\n", posx, posy, posw, posh, pinned, tags, color);
 	if (pwrite(lockfd, line, n, 0) == n && ftruncate(lockfd, n) == 0 && sync)
 		fsync(lockfd);
 }
@@ -146,7 +149,7 @@ lockpos(void)
 		lockfd = -1;
 		return 0;
 	}
-	if (readrect(lockfd, &r, &pinned, &tags)) {
+	if (readrect(lockfd, &r, &pinned, &tags, &color)) {
 		haspos = 1;
 		posx = r.x;
 		posy = r.y;
@@ -173,7 +176,7 @@ openrects(Rect *out, int max)
 			continue;
 		if ((fd = open(path, O_RDONLY)) < 0)
 			continue;
-		if (flock(fd, LOCK_SH | LOCK_NB) < 0 && readrect(fd, &out[n], NULL, NULL))
+		if (flock(fd, LOCK_SH | LOCK_NB) < 0 && readrect(fd, &out[n], NULL, NULL, NULL))
 			n++;
 		close(fd);
 	}
@@ -408,7 +411,11 @@ readresources(void)
 	if (XGetWindowProperty(dpy, root, XA_RESOURCE_MANAGER, 0L, 1L << 20, False, XA_STRING,
 	    &type, &format, &n, &after, &data) == Success && data) {
 		if ((db = XrmGetStringDatabase((char *)data))) {
-			resource(db, "note.background", background, sizeof background);
+			resource(db, "note.background", palette[0], sizeof palette[0]);
+			resource(db, "note.color1", palette[1], sizeof palette[1]);
+			resource(db, "note.color2", palette[2], sizeof palette[2]);
+			resource(db, "note.color3", palette[3], sizeof palette[3]);
+			resource(db, "note.color4", palette[4], sizeof palette[4]);
 			resource(db, "note.foreground", foreground, sizeof foreground);
 			resource(db, "note.cursor", cursorcolor, sizeof cursorcolor);
 			XrmDestroyDatabase(db);
@@ -424,9 +431,9 @@ makeschemes(void)
 	const char *cols[2];
 
 	cols[ColFg] = foreground;
-	cols[ColBg] = background;
+	cols[ColBg] = palette[color];
 	scheme = drw_scm_create(drw, cols, 2);
-	cols[ColFg] = background;
+	cols[ColFg] = palette[color];
 	cols[ColBg] = cursorcolor;
 	curscheme = drw_scm_create(drw, cols, 2);
 }
@@ -722,15 +729,29 @@ special(KeySym k)
 }
 
 static void
-reload(void)
+recolor(void)
 {
-	reloadflag = 0;
-	readresources();
 	drw_scm_free(drw, scheme, 2);
 	drw_scm_free(drw, curscheme, 2);
 	makeschemes();
 	XSetWindowBackground(dpy, win, scheme[ColBg].pixel);
 	draw();
+}
+
+static void
+nextcolor(void)
+{
+	color = (color + 1) % LENGTH(palette);
+	recolor();
+	writepos(0);
+}
+
+static void
+reload(void)
+{
+	reloadflag = 0;
+	readresources();
+	recolor();
 }
 
 static void
@@ -791,6 +812,8 @@ keypress(XKeyEvent *ev)
 	if ((ev->state & ControlMask) && (ev->state & ShiftMask)) {
 		if (k == XK_D || k == XK_d)
 			trash();
+		else if (k == XK_C || k == XK_c)
+			nextcolor();
 		else if (k == XK_V || k == XK_v)
 			XConvertSelection(dpy, clipboard, utf8string, pasteprop, win, ev->time);
 		return;
