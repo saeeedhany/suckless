@@ -457,3 +457,55 @@ text_gap() {
   [ "$(geometry "$win" X)" -eq 100 ]
   wait_for_pixel 103 103 '#222424'
 }
+
+fake_dmenu() {
+  mkdir -p "$BATS_TEST_TMPDIR/fake"
+  printf '#!/bin/sh\ncat > "%s/menu"\n%s\n' "$BATS_TEST_TMPDIR" "$1" > "$BATS_TEST_TMPDIR/fake/dmenu"
+  chmod +x "$BATS_TEST_TMPDIR/fake/dmenu"
+  export PATH="$BATS_TEST_TMPDIR/fake:$PATH"
+}
+
+two_notes() {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf '  first line\nmore' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  touch -d '1 hour ago' "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  printf 'second' > "$BATS_TEST_TMPDIR/notes/20260101-000001.txt"
+}
+
+@test "note -p lists saved notes newest first by their first line, and opens the pick" {
+  two_notes
+  start_dwm_note
+  fake_dmenu 'sed -n 2p "'"$BATS_TEST_TMPDIR"'/menu"'
+  note -p; note_win >/dev/null
+  [ "$(cat "$BATS_TEST_TMPDIR/menu")" = "$(printf '1  second\n2  first line')" ]
+  ! flock -n "$NOTES_DIR/.20260101-000000.pos" true
+  [ "$(xdotool search --class '^note$' | wc -l)" -eq 1 ]
+}
+
+@test "picking a note that is already open opens no second window" {
+  two_notes
+  start_dwm_note
+  note -o 20260101-000001 & note_win >/dev/null
+  fake_dmenu 'sed -n 1p "'"$BATS_TEST_TMPDIR"'/menu"'
+  note -p; sleep 1
+  [ "$(xdotool search --class '^note$' | wc -l)" -eq 1 ]
+}
+
+@test "escape in the picker opens nothing" {
+  two_notes
+  start_dwm_note
+  fake_dmenu 'exit 1'
+  run note -p
+  [ "$status" -eq 0 ]
+  sleep 0.5
+  [ -z "$(xdotool search --class '^note$')" ]
+}
+
+@test "the picker shows arabic first lines whole" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'سلام' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  fake_dmenu 'exit 1'
+  note -p
+  [ "$(cat "$BATS_TEST_TMPDIR/menu")" = "1  سلام" ]
+}

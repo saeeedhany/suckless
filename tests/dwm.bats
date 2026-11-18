@@ -411,3 +411,8 @@ start_dwm_with_st() {
   grep -q 'noterestorecmd\[\] *= { "note", "-r", NULL }' "$REPO/dwm/config.def.h"
   grep -qE 'MODKEY\|ShiftMask, +XK_n, +spawn, +\{\.v = noterestorecmd \}' "$REPO/dwm/config.def.h"
 }
+
+@test "super ctrl n opens the note picker" {
+  grep -q 'notepickcmd\[\] *= { "note", "-p", NULL }' "$REPO/dwm/config.def.h"
+  grep -qE 'MODKEY\|ControlMask, +XK_n, +spawn, +\{\.v = notepickcmd \}' "$REPO/dwm/config.def.h"
+}

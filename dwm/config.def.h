@@ -75,6 +75,7 @@ static const char *termcmd[]  = { "st", NULL };
 static const char *floattermcmd[] = { "st", "-c", "floatterm", NULL };
 static const char *notecmd[]  = { "note", NULL };
 static const char *noterestorecmd[] = { "note", "-r", NULL };
+static const char *notepickcmd[] = { "note", "-p", NULL };
 static const char *webcmd[]   = { "firefox", "--new-window", NULL };
 
 /* Xresources preferences loaded at startup */
@@ -95,6 +96,7 @@ static const Key keys[] = {
 	{ MODKEY|ControlMask,           XK_w,      spawnfloat,     {.v = webcmd } },
 	{ MODKEY,                       XK_n,      spawn,          {.v = notecmd } },
 	{ MODKEY|ShiftMask,             XK_n,      spawn,          {.v = noterestorecmd } },
+	{ MODKEY|ControlMask,           XK_n,      spawn,          {.v = notepickcmd } },
 	{ MODKEY,                       XK_b,      togglebar,      {0} },
 	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
 	{ MODKEY,                       XK_k,      focusstack,     {.i = -1 } },

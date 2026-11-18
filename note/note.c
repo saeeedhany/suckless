@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 #include <string.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -319,41 +320,174 @@ place(void)
 }
 
 static void
+selfpath(char *exe, size_t n, const char *self)
+{
+	ssize_t len;
+
+	if ((len = readlink("/proc/self/exe", exe, n - 1)) > 0)
+		exe[len] = '\0';
+	else
+		snprintf(exe, n, "%s", self);
+}
+
+static int
+spawnopen(const char *exe, const char *other)
+{
+	pid_t pid;
+
+	if ((pid = fork()) < 0) {
+		perror("note: fork");
+		return 0;
+	}
+	if (pid == 0) {
+		setsid();
+		execl(exe, "note", "-o", other, (char *)NULL);
+		_exit(1);
+	}
+	return 1;
+}
+
+static int
+claimable(const char *other)
+{
+	snprintf(id, sizeof id, "%s", other);
+	setpaths();
+	if (!lockpos())
+		return 0;
+	close(lockfd);
+	lockfd = -1;
+	return 1;
+}
+
+static void
 restoreall(const char *self)
 {
 	DIR *d;
 	struct dirent *e;
-	char other[64];
-	pid_t pid;
-	char exe[PATH_MAX];
-	ssize_t len;
+	char other[64], exe[PATH_MAX];
 
-	if ((len = readlink("/proc/self/exe", exe, sizeof exe - 1)) > 0)
-		exe[len] = '\0';
-	else
-		snprintf(exe, sizeof exe, "%s", self);
+	selfpath(exe, sizeof exe, self);
+	if (!(d = opendir(dir)))
+		return;
+	while ((e = readdir(d))) {
+		if (!notename(e->d_name, other, sizeof other) || !claimable(other))
+			continue;
+		if (!spawnopen(exe, other))
+			break;
+	}
+	closedir(d);
+}
+
+typedef struct {
+	char id[64];
+	char first[96];
+	time_t mtime;
+} Entry;
+
+static int
+newerfirst(const void *a, const void *b)
+{
+	const Entry *x = a, *y = b;
+
+	if (x->mtime != y->mtime)
+		return x->mtime < y->mtime ? 1 : -1;
+	return strcmp(y->id, x->id);
+}
+
+static void
+firstline(const char *path, char *out, size_t n)
+{
+	char raw[256];
+	ssize_t r = 0;
+	size_t i = 0, k = 0;
+	int fd;
+
+	if ((fd = open(path, O_RDONLY)) >= 0) {
+		r = read(fd, raw, sizeof raw);
+		close(fd);
+	}
+	while (i < (size_t)MAX(r, 0) && isspace((unsigned char)raw[i]))
+		i++;
+	for (; i < (size_t)MAX(r, 0) && raw[i] != '\n' && k < n - 5; i++)
+		if ((unsigned char)raw[i] >= 0x20)
+			out[k++] = raw[i];
+	if (k == n - 5 || i == sizeof raw) {
+		while (k > 0 && ((unsigned char)out[k - 1] & 0xc0) == 0x80)
+			k--;
+		if (k > 0 && (unsigned char)out[k - 1] >= 0xc0)
+			k--;
+	}
+	while (k > 0 && out[k - 1] == ' ')
+		k--;
+	out[k] = '\0';
+	if (!k)
+		snprintf(out, n, "(empty)");
+}
+
+static void
+pick(const char *self)
+{
+	DIR *d;
+	struct dirent *e;
+	struct stat st;
+	Entry *list = NULL;
+	size_t n = 0, cap = 0, got = 0, i;
+	char other[64], path[PATH_MAX], exe[PATH_MAX], reply[256], line[256];
+	int in[2], out[2], status;
+	ssize_t r;
+	long k;
+	pid_t pid = -1;
+
 	if (!(d = opendir(dir)))
 		return;
 	while ((e = readdir(d))) {
 		if (!notename(e->d_name, other, sizeof other))
 			continue;
-		snprintf(id, sizeof id, "%s", other);
-		setpaths();
-		if (!lockpos())
+		if ((size_t)snprintf(path, sizeof path, "%s/%s", dir, e->d_name) >= sizeof path || stat(path, &st) < 0)
 			continue;
-		close(lockfd);
-		lockfd = -1;
-		if ((pid = fork()) < 0) {
-			perror("note: fork");
-			break;
-		}
-		if (pid == 0) {
-			setsid();
-			execl(exe, "note", "-o", other, (char *)NULL);
-			_exit(1);
-		}
+		if (n == cap && !(list = realloc(list, (cap = cap ? cap * 2 : 32) * sizeof *list)))
+			die("realloc:");
+		snprintf(list[n].id, sizeof list[n].id, "%s", other);
+		list[n].mtime = st.st_mtime;
+		firstline(path, list[n].first, sizeof list[n].first);
+		n++;
 	}
 	closedir(d);
+	if (!n)
+		return;
+	qsort(list, n, sizeof *list, newerfirst);
+	signal(SIGPIPE, SIG_IGN);
+	if (pipe(in) < 0 || pipe(out) < 0 || (pid = fork()) < 0)
+		die("note: cannot run dmenu:");
+	if (pid == 0) {
+		dup2(in[0], 0);
+		dup2(out[1], 1);
+		close(in[0]);
+		close(in[1]);
+		close(out[0]);
+		close(out[1]);
+		execlp("dmenu", "dmenu", "-l", "15", "-p", "notes", (char *)NULL);
+		_exit(1);
+	}
+	close(in[0]);
+	close(out[1]);
+	for (i = 0; i < n; i++) {
+		k = snprintf(line, sizeof line, "%zu  %s\n", i + 1, list[i].first);
+		if (write(in[1], line, MIN((size_t)k, sizeof line - 1)) < 0)
+			break;
+	}
+	close(in[1]);
+	while (got < sizeof reply - 1 && (r = read(out[0], reply + got, sizeof reply - 1 - got)) > 0)
+		got += r;
+	reply[got] = '\0';
+	close(out[0]);
+	waitpid(pid, &status, 0);
+	k = strtol(reply, NULL, 10);
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && k >= 1 && (size_t)k <= n && claimable(list[k - 1].id)) {
+		selfpath(exe, sizeof exe, self);
+		spawnopen(exe, list[k - 1].id);
+	}
+	free(list);
 }
 
 static void
@@ -1105,7 +1239,7 @@ notesdir(void)
 static void
 usage(void)
 {
-	die("usage: note [-r] [-o id]");
+	die("usage: note [-r | -p | -o id]");
 }
 
 int
@@ -1132,6 +1266,9 @@ main(int argc, char *argv[])
 	buf = bufnew();
 	if (argc == 2 && !strcmp(argv[1], "-r")) {
 		restoreall(argv[0]);
+		return 0;
+	} else if (argc == 2 && !strcmp(argv[1], "-p")) {
+		pick(argv[0]);
 		return 0;
 	} else if (argc == 3 && !strcmp(argv[1], "-o")) {
 		if (!validid(argv[2]))
