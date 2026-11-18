@@ -1188,7 +1188,12 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon);
 	XMapWindow(dpy, c->win);
-	focus(!scanning && ISVISIBLE(c) && c->mon == selmon ? c : NULL);
+	if (scanning)
+		focus(NULL);
+	else if (ISVISIBLE(c) && (c->mon == selmon || !tagged))
+		focus(c);
+	else
+		focus(selmon->sel);
 }
 
 void
