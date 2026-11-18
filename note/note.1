@@ -1,0 +1,31 @@
+.TH NOTE 1 note\-VERSION
+.SH NAME
+note \- a sticky note
+.SH SYNOPSIS
+.B note
+.RB [ \-r ]
+.RB [ \-o
+.IR id ]
+.SH DESCRIPTION
+.B note
+opens a new empty note pinned to every tag. Text is saved to
+.I ~/notes
+as you type.
+.SH OPTIONS
+.TP
+.B \-r
+open every saved note that is not open now.
+.TP
+.BI \-o " id"
+open the saved note
+.IR id .
+.SH KEYS
+Insert mode is the default. Escape switches to a small vim normal mode.
+Ctrl+Shift+d throws the note into
+.IR ~/notes/.trash .
+Ctrl+Shift+v pastes the clipboard.
+.SH ENVIRONMENT
+.TP
+.B NOTES_DIR
+where notes are kept instead of
+.IR ~/notes .
