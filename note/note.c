@@ -25,6 +25,7 @@
 #include <X11/extensions/Xinerama.h>
 #endif
 
+#include "bidi.h"
 #include "buf.h"
 #include "drw.h"
 #include "util.h"
@@ -52,6 +53,7 @@ static char dir[PATH_MAX], id[64], txtpath[PATH_MAX], pospath[PATH_MAX];
 static unsigned int ww, wh, lineh, charw;
 static Row *rows;
 static size_t nrows, rowcap, top;
+static Vis vis;
 static struct timespec changed, firstchange;
 static int pending;
 static int sigpipe[2] = { -1, -1 };
@@ -656,13 +658,70 @@ cursorrow(void)
 	return nrows ? nrows - 1 : 0;
 }
 
+static unsigned int
+rowstart(unsigned int w)
+{
+	if (vis.base && ww > 2 * padding + w)
+		return ww - padding - w;
+	return padding;
+}
+
+static void
+drawrow(const char *s, Row *row, unsigned int y)
+{
+	char line[4096];
+	unsigned int w, x;
+
+	bidivis(&vis, s + row->start, row->end - row->start);
+	if (!vis.n)
+		return;
+	w = textw(vis.s, vis.n);
+	x = rowstart(w);
+	memcpy(line, vis.s, MIN(vis.n, sizeof line - 1));
+	line[MIN(vis.n, sizeof line - 1)] = '\0';
+	drw_text(drw, x, y, ww > x + padding ? ww - x - padding : 1, lineh, 0, line, 0);
+}
+
+static void
+drawcursor(const char *s, Row *row, unsigned int y)
+{
+	char glyph[8];
+	size_t rel = bufcursor(buf) - row->start, j, len;
+	unsigned int w, x0, x, cw;
+
+	bidivis(&vis, s + row->start, row->end - row->start);
+	w = textw(vis.s, vis.n);
+	x0 = rowstart(w);
+	for (j = 0; j < vis.nc && vis.log[j] != rel; j++)
+		;
+	drw_setscheme(drw, curscheme);
+	if (j == vis.nc) {
+		x = vis.base ? (x0 >= padding + 2 ? x0 - 2 : x0) : x0 + w;
+		if (bufmode(buf) == ModeInsert)
+			drw_rect(drw, x, y, 2, lineh, 1, 1);
+		else
+			drw_text(drw, vis.base && x >= charw ? x - charw + 2 : x, y, charw, lineh, 0, " ", 0);
+		return;
+	}
+	len = (j + 1 < vis.nc ? vis.off[j + 1] : vis.n) - vis.off[j];
+	x = x0 + textw(vis.s, vis.off[j]);
+	cw = textw(vis.s + vis.off[j], len);
+	if (bufmode(buf) == ModeInsert) {
+		drw_rect(drw, vis.rtl[j] ? x + cw : x, y, 2, lineh, 1, 1);
+		return;
+	}
+	len = MIN(len, sizeof glyph - 1);
+	memcpy(glyph, vis.s + vis.off[j], len);
+	glyph[len] = '\0';
+	drw_text(drw, x, y, cw ? cw : charw, lineh, 0, glyph, 0);
+}
+
 static void
 draw(void)
 {
 	const char *s;
-	char line[4096];
-	size_t n, r, cr, visible, len, cur;
-	unsigned int y, x, cw;
+	size_t n, r, cr, visible;
+	unsigned int y;
 
 	layout();
 	s = buftext(buf, &n);
@@ -676,26 +735,9 @@ draw(void)
 		top = cr - visible + 1;
 	drw_setscheme(drw, scheme);
 	drw_rect(drw, 0, 0, ww, wh, 1, 1);
-	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh) {
-		len = MIN(rows[r].end - rows[r].start, sizeof line - 1);
-		memcpy(line, s + rows[r].start, len);
-		line[len] = '\0';
-		if (len)
-			drw_text(drw, padding, y, ww - 2 * padding, lineh, 0, line, 0);
-	}
-	cur = bufcursor(buf);
-	x = padding + textw(s + rows[cr].start, cur - rows[cr].start);
-	y = padding + (cr - top) * lineh;
-	drw_setscheme(drw, curscheme);
-	if (bufmode(buf) == ModeInsert) {
-		drw_rect(drw, x, y, 2, lineh, 1, 1);
-	} else {
-		len = cur < n && s[cur] != '\n' ? MIN((size_t)utf8len(s[cur]), n - cur) : 0;
-		cw = len ? textw(s + cur, len) : charw;
-		memcpy(line, len ? s + cur : " ", len ? len : 1);
-		line[len ? len : 1] = '\0';
-		drw_text(drw, x, y, cw, lineh, 0, line, 0);
-	}
+	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh)
+		drawrow(s, &rows[r], y);
+	drawcursor(s, &rows[cr], padding + (cr - top) * lineh);
 	drw_map(drw, win, 0, 0, ww, wh);
 }
 
@@ -1218,6 +1260,7 @@ cleanup(void)
 		XDestroyIC(xic);
 	if (xim)
 		XCloseIM(xim);
+	bidifree(&vis);
 	drw_free(drw);
 	XDestroyWindow(dpy, win);
 	XCloseDisplay(dpy);

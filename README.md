@@ -26,7 +26,7 @@ never needs a rebuild. The compiled defaults are the `grey` theme.
 | dwm | `dwm.normbgcolor` `dwm.normfgcolor` `dwm.normbordercolor` `dwm.selbgcolor` `dwm.selfgcolor` `dwm.selbordercolor` | `kill -HUP` dwm, then any X event (colors reload in place, windows keep their tags) |
 | st | `st.color0`…`st.color15` `st.foreground` `st.background` `st.cursorColor` | `kill -USR1` st (every open window recolors) |
 | dmenu | `dmenu.background` `dmenu.foreground` `dmenu.selbackground` `dmenu.selforeground` | read at every launch |
-| note | `note.background` `note.foreground` `note.cursor` | `kill -USR1` note (every open note recolors) |
+| note | `note.background` `note.color1`…`note.color4` `note.foreground` `note.cursor` | `kill -USR1` note (every open note recolors) |
 
 dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
 
@@ -72,13 +72,17 @@ A sticky note: a plain square in the theme colors that you type on.
 the ones you closed; `note -r` does the same at login. Text is saved as you
 type to `~/notes/<id>.txt`, and where the note sits, whether it is pinned and
 its tag go to `~/notes/.<id>.pos`. Closing an empty note removes it;
-`ctrl shift d` moves a note to `~/notes/.trash`.
+`ctrl shift d` moves a note to `~/notes/.trash`. `super ctrl n` picks any
+saved note in dmenu by its first line, and `ctrl shift c` cycles a note through
+five colors drawn from the theme (`note.color1` to `note.color4`).
 
 It starts in insert mode. Escape gives a small vim normal mode: `h j k l`,
 `w b e`, `0 ^ $`, `gg G`, `x`, `dd`, `dw`, `D`, `cw`, `cc`, `C`, `r`, `J`,
 `yy`, `p`, `P`, `i a I A o O`, `u` and `ctrl r`, with counts. Commands follow
 the physical key, so they work in the Arabic layout too. `ctrl shift v`
-pastes the clipboard. `note/buf.c` holds the text and the keys, with no X
+pastes the clipboard. A line that starts with Arabic reads right to left and
+sits against the right edge, with its letters joined (`note/bidi.c`, FriBidi
+like st). `note/buf.c` holds the text and the keys, with no X
 code, and `make -C note test` checks every command.
 
 ## Upstream

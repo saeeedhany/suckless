@@ -317,14 +317,39 @@ text_gap() {
     END { if (bar == "" || txt == "") print -999; else print bar - txt }'
 }
 
-@test "arabic text is measured with the font that draws it, so the cursor sits right after it" {
+text_extent() {
+  xwd -id "$1" -silent | magick xwd:- txt:- 2>/dev/null |
+    sed -nE 's/^ *([0-9]+), *([0-9]+):.*(#[0-9A-Fa-f]{6}).*/\1 \2 \3/p' | awk '
+    $2 >= 9 && $2 < 26 && $1 > 0 {
+      c = tolower($3)
+      if (c == "#c2a46a") { if (bar == "" || $1 < bar) bar = $1 }
+      else if (c != "#222424" && c != "#5a5a5a" && c != "#4e4e4e") {
+        if (left == "" || $1 < left) left = $1
+        if ($1 > right) right = $1
+      }
+    }
+    END { print bar + 0, left + 0, right + 0 }'
+}
+
+@test "latin text is measured with the font that draws it, so the cursor sits right after it" {
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "hello there"; sleep 0.4
+  gap=$(text_gap "$win")
+  [ "$gap" -ge 0 ]
+  [ "$gap" -le 4 ]
+}
+
+@test "an arabic line reads right to left: it hugs the right edge and the cursor sits at its left" {
   start_dwm_note
   setxkbmap -layout ara
   note & win=$(note_win)
   xdotool type "سلامسلامسلام"; sleep 0.4
-  gap=$(text_gap "$win")
-  [ "$gap" -ge 0 ]
-  [ "$gap" -le 4 ]
+  read -r bar left right < <(text_extent "$win")
+  w=$(geometry "$win" WIDTH)
+  [ "$right" -ge $((w - 16)) ]
+  [ $((left - bar)) -ge 0 ]
+  [ $((left - bar)) -le 4 ]
 }
 
 @test "on two monitors an unpinned note comes back on its monitor and tag" {

@@ -4,6 +4,7 @@ note \- a sticky note
 .SH SYNOPSIS
 .B note
 .RB [ \-r ]
+.RB [ \-p ]
 .RB [ \-o
 .IR id ]
 .SH DESCRIPTION
@@ -16,6 +17,9 @@ as you type.
 .B \-r
 open every saved note that is not open now.
 .TP
+.B \-p
+pick a saved note in dmenu by its first line and open it.
+.TP
 .BI \-o " id"
 open the saved note
 .IR id .
@@ -24,6 +28,8 @@ Insert mode is the default. Escape switches to a small vim normal mode.
 Ctrl+Shift+d throws the note into
 .IR ~/notes/.trash .
 Ctrl+Shift+v pastes the clipboard.
+Ctrl+Shift+c cycles the note through five theme colors.
+Lines that start with Arabic or Hebrew read right to left.
 .SH ENVIRONMENT
 .TP
 .B NOTES_DIR
