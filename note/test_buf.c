@@ -128,6 +128,13 @@ main(void)
 	check("yy p", "a\nb", 0, ModeNormal, "yyjp", "a\nb\na", 4, ModeNormal);
 	check("dd P", "a\nb", 2, ModeNormal, "ddP", "b\na", 0, ModeNormal);
 	check("x p", "ab", 0, ModeNormal, "xp", "ba", 1, ModeNormal);
+	check("count r", "abcde", 0, ModeNormal, "3rxlx", "xxxe", 3, ModeNormal);
+	check("count r too long", "ab", 0, ModeNormal, "3rx", "ab", 0, ModeNormal);
+	check("counts multiply", "a b c d e f g h", 0, ModeNormal, "2d3w", "g h", 0, ModeNormal);
+	check("count p", "ab", 0, ModeNormal, "x3p", "baaa", 3, ModeNormal);
+	check("count linewise p", "a\nb", 0, ModeNormal, "yy2p", "a\na\na\nb", 2, ModeNormal);
+	check("J on an empty line", "a\n\nb", 2, ModeNormal, "J", "a\nb", 2, ModeNormal);
+	check("huge count is capped", "ab", 0, ModeNormal, "999999999999l", "ab", 1, ModeNormal);
 	check("undo insert session", "", 0, ModeInsert, "hello world\x1bu", "", 0, ModeNormal);
 	check("redo", "", 0, ModeInsert, "hello\x1bu\x12", "hello", 4, ModeNormal);
 	check("undo dd", "a\nb", 0, ModeNormal, "ddu", "a\nb", 0, ModeNormal);

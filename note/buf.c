@@ -5,6 +5,7 @@
 
 #define NOWANT ((size_t)-1)
 #define ENDWANT ((size_t)-2)
+#define MAXCOUNT 9999
 
 typedef struct Snap Snap;
 struct Snap {
@@ -17,7 +18,7 @@ struct Buf {
 	char *s;
 	size_t n, cap, cur, want;
 	int mode, dirty, insession;
-	int count, op;
+	int count, op, opcount;
 	char *reg;
 	size_t regn;
 	int reglines;
@@ -330,9 +331,9 @@ linesop(Buf *b, int op, size_t count)
 }
 
 static void
-put(Buf *b, int after)
+put(Buf *b, int after, size_t count)
 {
-	size_t at;
+	size_t at, i, first;
 
 	if (!b->regn && !b->reglines)
 		return;
@@ -340,23 +341,29 @@ put(Buf *b, int after)
 	if (b->reglines) {
 		if (after) {
 			at = lineend(b, b->cur);
-			insertat(b, at, "\n", 1);
-			insertat(b, at + 1, b->reg, b->regn);
-			b->cur = at + 1;
+			first = at + 1;
+			for (i = 0; i < count; i++) {
+				insertat(b, at, "\n", 1);
+				insertat(b, at + 1, b->reg, b->regn);
+				at += 1 + b->regn;
+			}
 		} else {
-			at = linestart(b, b->cur);
-			insertat(b, at, b->reg, b->regn);
-			insertat(b, at + b->regn, "\n", 1);
-			b->cur = at;
+			at = first = linestart(b, b->cur);
+			for (i = 0; i < count; i++) {
+				insertat(b, at, b->reg, b->regn);
+				insertat(b, at + b->regn, "\n", 1);
+				at += b->regn + 1;
+			}
 		}
-		b->cur = firstnonblank(b, b->cur);
+		b->cur = firstnonblank(b, first);
 		return;
 	}
 	at = b->cur;
 	if (after && lineend(b, at) > at)
 		at = next(b, at);
-	insertat(b, at, b->reg, b->regn);
-	b->cur = prev(b, at + b->regn);
+	for (i = 0; i < count; i++)
+		insertat(b, at + i * b->regn, b->reg, b->regn);
+	b->cur = prev(b, at + count * b->regn);
 }
 
 static void
@@ -374,7 +381,7 @@ join(Buf *b)
 		insertat(b, e, " ", 1);
 		b->cur = e;
 	} else {
-		b->cur = e > 0 ? prev(b, e) : 0;
+		b->cur = e > linestart(b, e) ? prev(b, e) : e;
 	}
 }
 
@@ -417,22 +424,33 @@ normalkey(Buf *b, int key)
 {
 	size_t n, i, ls, e;
 	int op = b->op, hadcount = b->count != 0;
+	char c;
 
 	if (op == 'r') {
 		b->op = 0;
-		if (key < 0x100 && key >= ' ' && b->cur < lineend(b, b->cur)) {
-			char c = key;
+		n = b->opcount;
+		e = lineend(b, b->cur);
+		for (i = b->cur; n > 0 && i < e; n--)
+			i = next(b, i);
+		if (key < 0x100 && key >= ' ' && n == 0) {
+			c = key;
 			pushundo(b);
-			deleterange(b, b->cur, next(b, b->cur));
-			insertat(b, b->cur, &c, 1);
+			deleterange(b, b->cur, i);
+			for (n = 0; n < b->opcount; n++)
+				insertat(b, b->cur + n, &c, 1);
+			b->cur += b->opcount - 1;
 		}
 		return;
 	}
 	if ((key >= '1' && key <= '9') || (key == '0' && b->count)) {
 		b->count = b->count * 10 + key - '0';
+		if (b->count > MAXCOUNT)
+			b->count = MAXCOUNT;
 		return;
 	}
 	n = b->count ? b->count : 1;
+	if (op)
+		n = n * b->opcount > MAXCOUNT ? MAXCOUNT : n * b->opcount;
 	b->count = 0;
 	b->op = 0;
 	if (op == 'g') {
@@ -512,7 +530,7 @@ normalkey(Buf *b, int key)
 		break;
 	case 'g': case 'd': case 'c': case 'y': case 'r':
 		b->op = key;
-		b->count = n > 1 ? n : 0;
+		b->opcount = n;
 		return;
 	case 'x':
 		if (b->cur >= e)
@@ -567,10 +585,10 @@ normalkey(Buf *b, int key)
 		join(b);
 		break;
 	case 'p':
-		put(b, 1);
+		put(b, 1, n);
 		break;
 	case 'P':
-		put(b, 0);
+		put(b, 0, n);
 		break;
 	case 'u':
 		restore(b, &b->undo, &b->redo);
