@@ -1098,9 +1098,14 @@ void
 manage(Window w, XWindowAttributes *wa)
 {
 	Client *c, *t = NULL;
+	Monitor *m;
 	Window trans = None;
 	XWindowChanges wc;
+	XSizeHints hints;
+	long supplied;
+	int usposition;
 
+	usposition = XGetWMNormalHints(dpy, w, &hints, &supplied) && (hints.flags & USPosition);
 	c = ecalloc(1, sizeof(Client));
 	c->win = w;
 	/* geometry */
@@ -1118,6 +1123,11 @@ manage(Window w, XWindowAttributes *wa)
 		c->mon = selmon;
 		applyrules(c);
 		getclienttagprop(c);
+	}
+	usposition = usposition && c->isfloating;
+	if (usposition && (m = recttomon(c->x, c->y, c->w, c->h)) != c->mon) {
+		c->mon = m;
+		c->tags = m->tagset[m->seltags];
 	}
 
 	if (c->x + WIDTH(c) > c->mon->wx + c->mon->ww)
@@ -1138,10 +1148,10 @@ manage(Window w, XWindowAttributes *wa)
 	if (c->isfullscreen) {
 		c->x = c->mon->mx;
 		c->y = c->mon->my;
-	} else if (c->issticky && c->isfloating) {
+	} else if (!usposition && c->issticky && c->isfloating) {
 		c->x = c->mon->wx + c->mon->ww - WIDTH(c);
 		c->y = c->mon->wy + gappx;
-	} else {
+	} else if (!usposition) {
 		c->x = c->mon->mx + (c->mon->mw - WIDTH(c)) / 2;
 		c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
 	}
@@ -1174,7 +1184,7 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon);
 	XMapWindow(dpy, c->win);
-	focus(NULL);
+	focus(ISVISIBLE(c) ? c : NULL);
 }
 
 void

@@ -374,3 +374,40 @@ start_dwm_with_st() {
   [ "$(geometry "$win" WIDTH)" -eq 800 ]
   pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
 }
+
+@test "a floating window that asks for a position keeps it" {
+  start_dwm_with_st
+  st -c floatterm -g 20x5+30+300 &
+  win=$(new_window ""); sleep 0.5
+  [ "$(geometry "$win" X)" -eq 30 ]
+  [ "$(geometry "$win" Y)" -eq 300 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "a window that asked for a position keeps it across a restart" {
+  start_dwm_with_st
+  st -c floatterm -g 20x5+30+300 &
+  win=$(new_window ""); sleep 0.5
+  kill -USR1 "$DWM_PID"; xsetroot -name dots; sleep 1
+  kill -0 "$DWM_PID"
+  [ "$(geometry "$win" X)" -eq 30 ]
+  [ "$(geometry "$win" Y)" -eq 300 ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "closing a focused pinned window hands focus back to the tag" {
+  start_dwm_with_st
+  xdotool key super+shift+Return
+  term=$(new_window ""); sleep 0.5
+  xdotool key super+ctrl+Return
+  note=$(new_window "$term"); sleep 0.5
+  xdotool key super+shift+p; sleep 0.3
+  xdotool key super+shift+c; sleep 0.3
+  [ "$(xdotool getactivewindow)" = "$term" ]
+  pkill -f "$BATS_TEST_TMPDIR/stbin/st" || true
+}
+
+@test "super shift n brings notes back with note -r" {
+  grep -q 'noterestorecmd\[\] *= { "note", "-r", NULL }' "$REPO/dwm/config.def.h"
+  grep -qE 'MODKEY\|ShiftMask, +XK_n, +spawn, +\{\.v = noterestorecmd \}' "$REPO/dwm/config.def.h"
+}
