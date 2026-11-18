@@ -120,7 +120,7 @@ bidiparadir(const char *s, size_t n)
 		if (t == FRIBIDI_TYPE_RTL || t == FRIBIDI_TYPE_AL)
 			return 1;
 	}
-	return 0;
+	return -1;
 }
 
 int
@@ -133,18 +133,22 @@ bidivis(Vis *v, const char *s, size_t n, int dir)
 	FriBidiArabicProp *joins;
 	FriBidiStrIndex *map;
 	FriBidiParType base;
-	size_t *lo, nc = 0, i, j, k;
+	size_t *lo, nc = 0, i, j, k, len;
+	unsigned char *bad;
 	int rtl = 0, ok;
 
 	if (dir < 0)
-		dir = bidiparadir(s, n);
+		dir = bidiparadir(s, n) == 1;
 	base = dir ? FRIBIDI_PAR_RTL : FRIBIDI_PAR_LTR;
 	reserve(v, 4 * n + 1, n + 1);
 	str = grow(NULL, (n + 1) * sizeof *str);
 	lo = grow(NULL, (n + 1) * sizeof *lo);
+	bad = grow(NULL, n + 1);
 	for (i = 0; i < n; nc++) {
 		lo[nc] = i;
-		i += decode((const unsigned char *)s + i, n - i, &str[nc]);
+		len = decode((const unsigned char *)s + i, n - i, &str[nc]);
+		bad[nc] = len == 1 && (unsigned char)s[i] >= 0x80;
+		i += len;
 		if (FRIBIDI_IS_RTL(fribidi_get_bidi_type(str[nc])))
 			rtl = 1;
 	}
@@ -152,6 +156,7 @@ bidivis(Vis *v, const char *s, size_t n, int dir)
 		identity(v, s, n, lo, nc);
 		free(str);
 		free(lo);
+		free(bad);
 		return 0;
 	}
 	types = grow(NULL, nc * sizeof *types);
@@ -178,7 +183,7 @@ bidivis(Vis *v, const char *s, size_t n, int dir)
 			v->off[j] = k;
 			v->log[j] = lo[map[j]];
 			v->rtl[j] = levels[map[j]] & 1;
-			if (str[map[j]] == 0xfffd) {
+			if (bad[map[j]]) {
 				v->s[k++] = s[lo[map[j]]];
 				continue;
 			}
@@ -197,6 +202,7 @@ bidivis(Vis *v, const char *s, size_t n, int dir)
 	free(map);
 	free(str);
 	free(lo);
+	free(bad);
 	return 1;
 }
 

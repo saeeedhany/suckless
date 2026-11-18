@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
 
@@ -72,7 +73,13 @@ main(void)
 	expect("arabic in a left to right line is still reversed", v.base == 0 && v.log[0] == 2 && v.log[1] == 0);
 
 	expect("line direction comes from the first strong letter",
-	    bidiparadir("12 \xd8\xb3 ab", 8) == 1 && bidiparadir("ab \xd8\xb3", 5) == 0 && bidiparadir("123", 3) == 0);
+	    bidiparadir("12 \xd8\xb3 ab", 8) == 1 && bidiparadir("ab \xd8\xb3", 5) == 0 && bidiparadir("123", 3) == -1 && bidiparadir("", 0) == -1);
+
+	bidivis(&v, "\xd8\xb3\xef\xbf\xbd", 5, -1);
+	expect("a real replacement character survives an arabic row", v.n >= 3 && memmem(v.s, v.n, "\xef\xbf\xbd", 3) != NULL);
+
+	bidivis(&v, "\xd8\xb3\xe2", 3, -1);
+	expect("a broken byte survives an arabic row", memchr(v.s, 0xe2, v.n) != NULL && v.base == 1);
 
 	bidifree(&v);
 	if (failed)

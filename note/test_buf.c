@@ -93,6 +93,24 @@ checkdirty(void)
 	buffree(b);
 }
 
+static void
+checkcap(void)
+{
+	Buf *b = bufnew();
+	size_t n;
+
+	bufload(b, "a", 1);
+	bufkey(b, 'y');
+	bufkey(b, 'y');
+	feed(b, "99999p");
+	buftext(b, &n);
+	if (n != 1 + 2 * 9999) {
+		printf("FAIL count cap: %zu bytes, want %d\n", n, 1 + 2 * 9999);
+		failed++;
+	}
+	buffree(b);
+}
+
 int
 main(void)
 {
@@ -142,6 +160,7 @@ main(void)
 	check("utf8 backspace", "a\xd8\xb3", 3, ModeInsert, "\b", "a", 1, ModeInsert);
 	check("utf8 h", "\xd8\xb3\xd9\x84", 2, ModeNormal, "h", "\xd8\xb3\xd9\x84", 0, ModeNormal);
 	checkdirty();
+	checkcap();
 	if (failed)
 		printf("%d failed\n", failed);
 	else

@@ -511,13 +511,16 @@ two_notes() {
   [ "$(xdotool search --class '^note$' | wc -l)" -eq 1 ]
 }
 
-@test "picking a note that is already open opens no second window" {
+@test "an open note is marked in the picker, and picking it flags it instead of opening a second one" {
   two_notes
   start_dwm_note
-  note -o 20260101-000001 & note_win >/dev/null
+  note -o 20260101-000001 & win=$(note_win)
+  xdotool key super+shift+p super+shift+2; sleep 0.5
   fake_dmenu 'sed -n 1p "'"$BATS_TEST_TMPDIR"'/menu"'
   note -p; sleep 1
+  [ "$(head -1 "$BATS_TEST_TMPDIR/menu")" = "1  second  (open)" ]
   [ "$(xdotool search --class '^note$' | wc -l)" -eq 1 ]
+  xprop -id "$win" WM_HINTS | grep -qi urgen
 }
 
 @test "escape in the picker opens nothing" {
@@ -574,4 +577,69 @@ two_notes() {
   xdotool type "hello"; sleep 0.6
   [ "$(xdotool getactivewindow)" = "$win" ]
   grep -qx hello "$NOTES_DIR"/*.txt
+}
+
+@test "a theme switch while the picker is open does not cancel the pick" {
+  two_notes
+  start_dwm_note
+  fake_dmenu 'sleep 1; sed -n 2p "'"$BATS_TEST_TMPDIR"'/menu"'
+  note -p & pid=$!
+  sleep 0.4; kill -USR1 "$pid"
+  wait "$pid"
+  note_win >/dev/null
+}
+
+@test "every note ignores broken pipes, however it was started" {
+  start_dwm_note
+  note & pid=$!; note_win >/dev/null
+  (( 0x$(awk '/^SigIgn/ { print $2 }' "/proc/$pid/status") & 0x1000 ))
+}
+
+@test "a note shows a mark while its saves fail, and drops it once a save works" {
+  start_dwm_note
+  note & win=$(note_win)
+  x=$(( $(geometry "$win" X) + $(geometry "$win" WIDTH) - 4 )); y=$(( $(geometry "$win" Y) + 3 ))
+  chmod 500 "$NOTES_DIR"
+  xdotool type "stuck"
+  wait_for_pixel "$x" "$y" '#c2a46a'
+  chmod 700 "$NOTES_DIR"
+  wait_for_pixel "$x" "$y" '#222424'
+}
+
+@test "an empty line after an arabic line keeps the cursor on the right" {
+  start_dwm_note
+  setxkbmap -layout ara
+  note & win=$(note_win)
+  xdotool type "سلام"; xdotool key Return; sleep 0.4
+  read -r bar left right < <(text_extent "$win" 30 44)
+  [ "$bar" -gt $(( $(geometry "$win" WIDTH) / 2 )) ]
+}
+
+@test "the picker cuts a long arabic first line on a whole letter" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  for i in $(seq 60); do printf 'س'; done > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  fake_dmenu 'exit 1'
+  note -p
+  iconv -f UTF-8 -t UTF-8 "$BATS_TEST_TMPDIR/menu" >/dev/null
+  [ "$(wc -c < "$BATS_TEST_TMPDIR/menu")" -le 100 ]
+  [ "$(wc -c < "$BATS_TEST_TMPDIR/menu")" -ge 80 ]
+}
+
+@test "a dwm restart keeps a hidden unpinned note on its own monitor and tag" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'right' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  echo "900 100 240 180 0 4" > "$BATS_TEST_TMPDIR/notes/.20260101-000000.pos"
+  rsync -a "$REPO/dwm/" "$BATS_TEST_TMPDIR/dwm/"
+  make -C "$BATS_TEST_TMPDIR/dwm" >/dev/null 2>&1
+  make -C "$WORK" >/dev/null
+  export PATH="$WORK:$PATH" NOTES_DIR="$BATS_TEST_TMPDIR/notes" DISPLAY=:99
+  start_two_monitors
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" X)" -lt 0 ]
+  xdotool mousemove 100 300; sleep 0.2
+  kill -USR1 "$DWM_PID"; xsetroot -name dots; sleep 1
+  xdotool key super+period super+3; sleep 0.4
+  [ "$(geometry "$win" X)" -ge 800 ]
 }

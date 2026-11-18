@@ -55,7 +55,7 @@ static Row *rows;
 static size_t nrows, rowcap, top;
 static Vis vis;
 static struct timespec changed, firstchange;
-static int pending;
+static int pending, savefailed;
 static int sigpipe[2] = { -1, -1 };
 static volatile sig_atomic_t quitflag, reloadflag;
 static int trashed;
@@ -384,7 +384,48 @@ typedef struct {
 	char id[64];
 	char first[96];
 	time_t mtime;
+	int open;
 } Entry;
+
+static void
+activate(const char *want)
+{
+	Display *d;
+	Window r, parent, *kids = NULL;
+	unsigned int nk, i;
+	Atom noteid, active, type;
+	int format;
+	unsigned long n, after;
+	unsigned char *data;
+	XEvent ev;
+
+	if (!(d = XOpenDisplay(NULL)))
+		return;
+	noteid = XInternAtom(d, "_NOTE_ID", False);
+	active = XInternAtom(d, "_NET_ACTIVE_WINDOW", False);
+	r = DefaultRootWindow(d);
+	if (XQueryTree(d, r, &r, &parent, &kids, &nk)) {
+		for (i = 0; i < nk; i++) {
+			data = NULL;
+			if (XGetWindowProperty(d, kids[i], noteid, 0L, 16L, False, XA_STRING,
+			    &type, &format, &n, &after, &data) == Success && data && n == strlen(want) && !memcmp(data, want, n)) {
+				memset(&ev, 0, sizeof ev);
+				ev.xclient.type = ClientMessage;
+				ev.xclient.window = kids[i];
+				ev.xclient.message_type = active;
+				ev.xclient.format = 32;
+				ev.xclient.data.l[0] = 2;
+				ev.xclient.data.l[1] = CurrentTime;
+				XSendEvent(d, DefaultRootWindow(d), False, SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+			}
+			if (data)
+				XFree(data);
+		}
+		if (kids)
+			XFree(kids);
+	}
+	XCloseDisplay(d);
+}
 
 static int
 newerfirst(const void *a, const void *b)
@@ -452,13 +493,14 @@ pick(const char *self)
 		snprintf(list[n].id, sizeof list[n].id, "%s", other);
 		list[n].mtime = st.st_mtime;
 		firstline(path, list[n].first, sizeof list[n].first);
+		list[n].open = !claimable(other);
 		n++;
 	}
 	closedir(d);
 	if (!n)
 		return;
 	qsort(list, n, sizeof *list, newerfirst);
-	signal(SIGPIPE, SIG_IGN);
+	signal(SIGUSR1, SIG_IGN);
 	if (pipe(in) < 0 || pipe(out) < 0 || (pid = fork()) < 0)
 		die("note: cannot run dmenu:");
 	if (pid == 0) {
@@ -474,20 +516,34 @@ pick(const char *self)
 	close(in[0]);
 	close(out[1]);
 	for (i = 0; i < n; i++) {
-		k = snprintf(line, sizeof line, "%zu  %s\n", i + 1, list[i].first);
+		k = snprintf(line, sizeof line, "%zu  %s%s\n", i + 1, list[i].first, list[i].open ? "  (open)" : "");
 		if (write(in[1], line, MIN((size_t)k, sizeof line - 1)) < 0)
 			break;
 	}
 	close(in[1]);
-	while (got < sizeof reply - 1 && (r = read(out[0], reply + got, sizeof reply - 1 - got)) > 0)
+	while (got < sizeof reply - 1) {
+		r = read(out[0], reply + got, sizeof reply - 1 - got);
+		if (r < 0 && errno == EINTR)
+			continue;
+		if (r <= 0)
+			break;
 		got += r;
+	}
 	reply[got] = '\0';
 	close(out[0]);
-	waitpid(pid, &status, 0);
+	while (waitpid(pid, &status, 0) < 0)
+		if (errno != EINTR) {
+			status = 1 << 8;
+			break;
+		}
 	k = strtol(reply, NULL, 10);
-	if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && k >= 1 && (size_t)k <= n && claimable(list[k - 1].id)) {
-		selfpath(exe, sizeof exe, self);
-		spawnopen(exe, list[k - 1].id);
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && k >= 1 && (size_t)k <= n) {
+		if (claimable(list[k - 1].id)) {
+			selfpath(exe, sizeof exe, self);
+			spawnopen(exe, list[k - 1].id);
+		} else {
+			activate(list[k - 1].id);
+		}
 	}
 	free(list);
 }
@@ -577,13 +633,13 @@ makeschemes(void)
 static int
 utf8len(unsigned char c)
 {
-	if (c < 0x80)
-		return 1;
 	if ((c & 0xe0) == 0xc0)
 		return 2;
 	if ((c & 0xf0) == 0xe0)
 		return 3;
-	return 4;
+	if ((c & 0xf8) == 0xf0)
+		return 4;
+	return 1;
 }
 
 static unsigned int
@@ -662,12 +718,20 @@ static int
 linedir(const char *s, size_t n, size_t at)
 {
 	size_t ls = at, le = at;
+	int d;
 
-	while (ls > 0 && s[ls - 1] != '\n')
-		ls--;
 	while (le < n && s[le] != '\n')
 		le++;
-	return bidiparadir(s + ls, le - ls);
+	while (1) {
+		while (ls > 0 && s[ls - 1] != '\n')
+			ls--;
+		if ((d = bidiparadir(s + ls, le - ls)) >= 0)
+			return d;
+		if (ls == 0)
+			return 0;
+		le = ls - 1;
+		ls = le;
+	}
 }
 
 static unsigned int
@@ -773,6 +837,8 @@ draw(void)
 	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh)
 		drawrow(s, n, &rows[r], y);
 	drawcursor(s, n, &rows[cr], padding + (cr - top) * lineh);
+	if (savefailed)
+		drw_rect(drw, ww > 7 ? ww - 7 : 0, 1, 5, 5, 1, 1);
 	drw_map(drw, win, 0, 0, ww, wh);
 }
 
@@ -826,8 +892,10 @@ save(void)
 	if (writefile(txtpath, s, n)) {
 		bufclean(buf);
 		pending = 0;
+		savefailed = 0;
 		return 1;
 	}
+	savefailed = 1;
 	clock_gettime(CLOCK_MONOTONIC, &changed);
 	firstchange = changed;
 	return 0;
@@ -954,7 +1022,7 @@ nextcolor(void)
 {
 	color = (color + 1) % LENGTH(palette);
 	recolor();
-	writepos(0);
+	writepos(1);
 }
 
 static void
@@ -1147,6 +1215,8 @@ setup(int fresh)
 		CopyFromParent, CWBackPixel | CWEventMask, &swa);
 	XSetClassHint(dpy, win, &ch);
 	XStoreName(dpy, win, "note");
+	XChangeProperty(dpy, win, XInternAtom(dpy, "_NOTE_ID", False), XA_STRING, 8,
+		PropModeReplace, (unsigned char *)id, strlen(id));
 	XSetWMHints(dpy, win, &wmh);
 	sh = XAllocSizeHints();
 	sh->flags = PSize | (usepos ? USPosition : 0);
@@ -1168,6 +1238,14 @@ setup(int fresh)
 	if (xim)
 		xic = XCreateIC(xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
 			XNClientWindow, win, XNFocusWindow, win, NULL);
+	if (!xic) {
+		if (xim)
+			XCloseIM(xim);
+		XSetLocaleModifiers("@im=none");
+		if ((xim = XOpenIM(dpy, NULL, NULL, NULL)))
+			xic = XCreateIC(xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+				XNClientWindow, win, XNFocusWindow, win, NULL);
+	}
 	if (!xic)
 		die("note: no input method");
 	if (pinned)
@@ -1191,6 +1269,7 @@ run(void)
 	struct pollfd pfd[2] = { { .fd = ConnectionNumber(dpy), .events = POLLIN }, { .fd = sigpipe[0], .events = POLLIN } };
 	char drain[64];
 	long left;
+	int was;
 
 	while (!quitflag) {
 		if (reloadflag)
@@ -1253,7 +1332,10 @@ run(void)
 		if (bufdirty(buf)) {
 			left = MIN((long)savedelay - msecsince(&changed), (long)maxsavedelay - msecsince(&firstchange));
 			if (left <= 0) {
+				was = savefailed;
 				save();
+				if (savefailed != was)
+					draw();
 				continue;
 			}
 		}
@@ -1326,6 +1408,7 @@ main(int argc, char *argv[])
 	struct sigaction sa;
 	int fresh = 1;
 
+	signal(SIGPIPE, SIG_IGN);
 	if (pipe(sigpipe) == 0) {
 		fcntl(sigpipe[0], F_SETFL, O_NONBLOCK);
 		fcntl(sigpipe[1], F_SETFL, O_NONBLOCK);
@@ -1343,6 +1426,7 @@ main(int argc, char *argv[])
 	notesdir();
 	buf = bufnew();
 	if (argc == 2 && !strcmp(argv[1], "-r")) {
+		signal(SIGUSR1, SIG_IGN);
 		restoreall(argv[0]);
 		return 0;
 	} else if (argc == 2 && !strcmp(argv[1], "-p")) {
