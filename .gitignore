@@ -8,3 +8,5 @@ dwmblocks/dwmblocks
 *.rej
 dwmblocks/kbsignal
 slock/slock
+note/note
+note/test_buf
