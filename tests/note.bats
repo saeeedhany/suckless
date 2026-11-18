@@ -118,3 +118,112 @@ geometry() { xdotool getwindowgeometry --shell "$1" | grep -E "^$2=" | cut -d= -
   [ "$(geometry "$win" WIDTH)" -lt 400 ]
   [ "$(geometry "$win" HEIGHT)" -lt 300 ]
 }
+
+@test "a new note is pinned and sits top right" {
+  start_dwm_note
+  note & win=$(note_win)
+  xprop -id "$win" _NET_WM_STATE | grep -q STICKY
+  x=$(geometry "$win" X); w=$(geometry "$win" WIDTH)
+  [ $((800 - x - w)) -le 20 ]
+}
+
+@test "a second note goes below the first" {
+  start_dwm_note
+  note & a=$(note_win)
+  note & b=$(note_win "$a")
+  [ "$(geometry "$b" Y)" -gt "$(geometry "$a" Y)" ]
+  [ "$(geometry "$b" X)" -eq "$(geometry "$a" X)" ]
+}
+
+@test "a new note takes focus from the terminal on the tag" {
+  start_dwm_note
+  rsync -a "$REPO/st/" "$BATS_TEST_TMPDIR/stsrc/"
+  make -C "$BATS_TEST_TMPDIR/stsrc" >/dev/null 2>&1
+  "$BATS_TEST_TMPDIR/stsrc/st" & term=$(new_window ""); sleep 0.5
+  note & win=$(note_win)
+  [ "$(xdotool getactivewindow)" = "$win" ]
+  pkill -f "$BATS_TEST_TMPDIR/stsrc/st" || true
+}
+
+@test "note -r brings back text, position and pinned state" {
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "back"
+  xdotool windowmove "$win" 200 300; sleep 0.6
+  x=$(geometry "$win" X); y=$(geometry "$win" Y)
+  xdotool key super+shift+c; sleep 0.5
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" X)" -eq "$x" ]
+  [ "$(geometry "$win" Y)" -eq "$y" ]
+  xprop -id "$win" _NET_WM_STATE | grep -q STICKY
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "back" ]
+}
+
+@test "an unpinned note comes back on its own tag" {
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "tag three"
+  xdotool key super+shift+p; sleep 0.3
+  xdotool key super+shift+3; sleep 0.6
+  xdotool key super+3; sleep 0.3
+  xdotool key super+shift+c; sleep 0.5
+  xdotool key super+1; sleep 0.3
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" X)" -lt 0 ]
+  xdotool key super+3; sleep 0.3
+  [ "$(geometry "$win" X)" -ge 0 ]
+}
+
+@test "note -r twice opens each note once" {
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "once"
+  xdotool key super+shift+c; sleep 0.5
+  note -r; note -r; sleep 1
+  [ "$(xdotool search --class '^note$' | wc -l)" -eq 1 ]
+}
+
+@test "two open notes keep their own text" {
+  start_dwm_note
+  note & a=$(note_win)
+  xdotool type "first"
+  note & b=$(note_win "$a")
+  xdotool type "second"; sleep 0.6
+  [ "$(for f in "$NOTES_DIR"/*.txt; do cat "$f"; echo; done | sort | tr '\n' ' ')" = "first second " ]
+}
+
+@test "a missing or garbled position file still opens the note" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf hi > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  echo garbage > "$BATS_TEST_TMPDIR/notes/.20260101-000000.pos"
+  printf yo > "$BATS_TEST_TMPDIR/notes/20260101-000001.txt"
+  start_dwm_note
+  note -r; sleep 1.5
+  [ "$(xdotool search --class '^note$' | wc -l)" -eq 2 ]
+}
+
+@test "other files in the notes folder are left alone" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  : > "$BATS_TEST_TMPDIR/notes/todo.md"
+  start_dwm_note
+  note -r; sleep 1
+  [ -z "$(xdotool search --class '^note$')" ]
+  [ -e "$BATS_TEST_TMPDIR/notes/todo.md" ]
+}
+
+@test "a position off every screen is pulled back on" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf far > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  echo "3000 200 240 180 1 1" > "$BATS_TEST_TMPDIR/notes/.20260101-000000.pos"
+  start_dwm_note
+  note -r; win=$(note_win)
+  [ "$(geometry "$win" X)" -ge 0 ]
+  [ $(( $(geometry "$win" X) + $(geometry "$win" WIDTH) )) -le 800 ]
+}
+
+@test "note -o refuses ids that are not note names" {
+  start_dwm_note
+  run note -o ../etc/passwd
+  [ "$status" -ne 0 ]
+  [ -z "$(xdotool search --class '^note$')" ]
+}

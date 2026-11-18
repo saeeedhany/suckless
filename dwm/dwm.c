@@ -1148,10 +1148,13 @@ manage(Window w, XWindowAttributes *wa)
 	if (c->isfullscreen) {
 		c->x = c->mon->mx;
 		c->y = c->mon->my;
-	} else if (!usposition && c->issticky && c->isfloating) {
+	} else if (usposition) {
+		c->x = MAX(MIN(wa->x, c->mon->wx + c->mon->ww - WIDTH(c)), c->mon->wx);
+		c->y = MAX(MIN(wa->y, c->mon->wy + c->mon->wh - HEIGHT(c)), c->mon->wy);
+	} else if (c->issticky && c->isfloating) {
 		c->x = c->mon->wx + c->mon->ww - WIDTH(c);
 		c->y = c->mon->wy + gappx;
-	} else if (!usposition) {
+	} else {
 		c->x = c->mon->mx + (c->mon->mw - WIDTH(c)) / 2;
 		c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
 	}
