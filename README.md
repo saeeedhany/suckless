@@ -1,6 +1,6 @@
 # suckless
 
-My dwm, st, dmenu and dwmblocks, as they run on my machine.
+My dwm, st, dmenu, dwmblocks and note, as they run on my machine.
 
 ```
 make install
@@ -26,6 +26,7 @@ never needs a rebuild. The compiled defaults are the `grey` theme.
 | dwm | `dwm.normbgcolor` `dwm.normfgcolor` `dwm.normbordercolor` `dwm.selbgcolor` `dwm.selfgcolor` `dwm.selbordercolor` | `kill -HUP` dwm, then any X event (colors reload in place, windows keep their tags) |
 | st | `st.color0`…`st.color15` `st.foreground` `st.background` `st.cursorColor` | `kill -USR1` st (every open window recolors) |
 | dmenu | `dmenu.background` `dmenu.foreground` `dmenu.selbackground` `dmenu.selforeground` | read at every launch |
+| note | `note.background` `note.foreground` `note.cursor` | `kill -USR1` note (every open note recolors) |
 
 dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
 
@@ -39,7 +40,10 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
   and reads it back. `super ctrl return` opens a floating st (class `floatterm`,
   floated by a rule); `super ctrl w` floats the next window that opens, for
   Firefox, whose new windows all share one class. That window is capped at
-  `floatmax` of the screen and centered.
+  `floatmax` of the screen and centered. `super shift p` pins a window to
+  every tag (sticky patch); a pinned floating window moves to the top right,
+  never takes focus on a tag switch, and stays pinned across a restart. A
+  floating window that asks for a position (`USPosition`) keeps it.
 - **st** 0.9.3 with xresources-signal-reloading, plus fixes: a key missing
   from Xresources no longer inherits the previous key's value, the reload
   runs in the main loop instead of the signal handler, and it no longer
@@ -60,6 +64,22 @@ dwm no longer passes color flags to dmenu, so every dmenu caller looks the same.
   `sudo make -C slock install` once, and again only when slock itself changes.
 - **dwmblocks** torrinfail's, with `blocks.def.h` rebuilt from my installed
   binary (its source was lost). Scripts live in dots: `config/dwmblocks/scripts/`.
+
+## note
+
+A sticky note: a plain square in the theme colors that you type on.
+`super n` opens a new one, pinned to every tag; `super shift n` brings back
+the ones you closed; `note -r` does the same at login. Text is saved as you
+type to `~/notes/<id>.txt`, and where the note sits, whether it is pinned and
+its tag go to `~/notes/.<id>.pos`. Closing an empty note removes it;
+`ctrl shift d` moves a note to `~/notes/.trash`.
+
+It starts in insert mode. Escape gives a small vim normal mode: `h j k l`,
+`w b e`, `0 ^ $`, `gg G`, `x`, `dd`, `dw`, `D`, `cw`, `cc`, `C`, `r`, `J`,
+`yy`, `p`, `P`, `i a I A o O`, `u` and `ctrl r`, with counts. Commands follow
+the physical key, so they work in the Arabic layout too. `ctrl shift v`
+pastes the clipboard. `note/buf.c` holds the text and the keys, with no X
+code, and `make -C note test` checks every command.
 
 ## Upstream
 

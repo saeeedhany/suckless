@@ -1,5 +1,5 @@
 # Build or install every tool present: make, make install, make uninstall, make clean
-TOOLS = dwm st dmenu dwmblocks
+TOOLS = dwm st dmenu dwmblocks note
 
 all install uninstall clean:
 	@for t in $(TOOLS); do \
