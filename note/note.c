@@ -17,6 +17,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 #ifdef XINERAMA
@@ -44,14 +45,15 @@ static Drw *drw;
 static Clr *scheme, *curscheme;
 static XIM xim;
 static XIC xic;
-static Atom wmdelete, wmprotocols, netwmstate, netsticky, clientinfo;
+static Atom wmdelete, wmprotocols, netwmstate, netsticky, clientinfo, clipboard, utf8string, pasteprop;
 static Buf *buf;
 static char dir[PATH_MAX], id[64], txtpath[PATH_MAX], pospath[PATH_MAX];
 static unsigned int ww, wh, lineh, charw;
 static Row *rows;
 static size_t nrows, rowcap, top;
 static struct timespec changed;
-static volatile sig_atomic_t quitflag;
+static volatile sig_atomic_t quitflag, reloadflag;
+static int trashed;
 static int lockfd = -1, haspos, pinned = 1, posx, posy, posw, posh;
 static long tags;
 
@@ -327,6 +329,58 @@ onquit(int sig)
 	quitflag = 1;
 }
 
+static void
+onreload(int sig)
+{
+	reloadflag = 1;
+}
+
+static void
+resource(XrmDatabase db, const char *name, char *dst, size_t n)
+{
+	char *type;
+	XrmValue v;
+
+	if (XrmGetResource(db, name, name, &type, &v) && v.addr && v.addr[0] == '#' && strlen(v.addr) == n - 1)
+		memcpy(dst, v.addr, n);
+}
+
+static void
+readresources(void)
+{
+	Atom type;
+	int format;
+	unsigned long n, after;
+	unsigned char *data = NULL;
+	XrmDatabase db;
+
+	XrmInitialize();
+	if (XGetWindowProperty(dpy, root, XA_RESOURCE_MANAGER, 0L, 1L << 20, False, XA_STRING,
+	    &type, &format, &n, &after, &data) == Success && data) {
+		if ((db = XrmGetStringDatabase((char *)data))) {
+			resource(db, "note.background", background, sizeof background);
+			resource(db, "note.foreground", foreground, sizeof foreground);
+			resource(db, "note.cursor", cursorcolor, sizeof cursorcolor);
+			XrmDestroyDatabase(db);
+		}
+	}
+	if (data)
+		XFree(data);
+}
+
+static void
+makeschemes(void)
+{
+	const char *cols[2];
+
+	cols[ColFg] = foreground;
+	cols[ColBg] = background;
+	scheme = drw_scm_create(drw, cols, 2);
+	cols[ColFg] = background;
+	cols[ColBg] = cursorcolor;
+	curscheme = drw_scm_create(drw, cols, 2);
+}
+
 static int
 utf8len(unsigned char c)
 {
@@ -588,6 +642,54 @@ special(KeySym k)
 }
 
 static void
+reload(void)
+{
+	reloadflag = 0;
+	readresources();
+	drw_scm_free(drw, scheme, 2);
+	drw_scm_free(drw, curscheme, 2);
+	makeschemes();
+	XSetWindowBackground(dpy, win, scheme[ColBg].pixel);
+	draw();
+}
+
+static void
+trash(void)
+{
+	char tdir[PATH_MAX], t[PATH_MAX];
+
+	save();
+	if ((size_t)snprintf(tdir, sizeof tdir, "%s/.trash", dir) >= sizeof tdir ||
+	    (mkdir(tdir, 0700) < 0 && errno != EEXIST))
+		return;
+	if ((size_t)snprintf(t, sizeof t, "%s/%s.txt", tdir, id) >= sizeof t || rename(txtpath, t) < 0)
+		return;
+	if ((size_t)snprintf(t, sizeof t, "%s/.%s.pos", tdir, id) < sizeof t)
+		rename(pospath, t);
+	trashed = 1;
+	quitflag = 1;
+}
+
+static void
+paste(XSelectionEvent *ev)
+{
+	Atom type;
+	int format;
+	unsigned long n, after;
+	unsigned char *data = NULL;
+
+	if (ev->property == None)
+		return;
+	if (XGetWindowProperty(dpy, win, pasteprop, 0L, 1L << 20, True, AnyPropertyType,
+	    &type, &format, &n, &after, &data) == Success && data && format == 8) {
+		if (bufmode(buf) == ModeInsert)
+			bufinsert(buf, (char *)data, n);
+	}
+	if (data)
+		XFree(data);
+}
+
+static void
 keypress(XKeyEvent *ev)
 {
 	char text[64];
@@ -595,6 +697,13 @@ keypress(XKeyEvent *ev)
 	Status status;
 	int len, sp;
 
+	if ((ev->state & ControlMask) && (ev->state & ShiftMask)) {
+		if (k == XK_D || k == XK_d)
+			trash();
+		else if (k == XK_V || k == XK_v)
+			XConvertSelection(dpy, clipboard, utf8string, pasteprop, win, ev->time);
+		return;
+	}
 	if (ev->state & ControlMask) {
 		switch (k) {
 		case XK_w: bufkey(buf, KeyCtrlW); break;
@@ -672,7 +781,6 @@ setup(int fresh)
 	XClassHint ch = { "note", "note" };
 	XWMHints wmh = { .flags = InputHint, .input = True };
 	XSizeHints *sh;
-	const char *cols[2];
 	long info[3];
 	int usepos = 0;
 
@@ -687,12 +795,8 @@ setup(int fresh)
 		die("note: no fonts could be loaded");
 	lineh = drw->fonts->h;
 	charw = textw("0", 1);
-	cols[ColFg] = foreground;
-	cols[ColBg] = background;
-	scheme = drw_scm_create(drw, cols, 2);
-	cols[ColFg] = background;
-	cols[ColBg] = cursorcolor;
-	curscheme = drw_scm_create(drw, cols, 2);
+	readresources();
+	makeschemes();
 	ww = 2 * padding + columns * charw;
 	wh = 2 * padding + lines * lineh;
 	if (haspos) {
@@ -707,6 +811,9 @@ setup(int fresh)
 	netwmstate = XInternAtom(dpy, "_NET_WM_STATE", False);
 	netsticky = XInternAtom(dpy, "_NET_WM_STATE_STICKY", False);
 	clientinfo = XInternAtom(dpy, "_NET_CLIENT_INFO", False);
+	clipboard = XInternAtom(dpy, "CLIPBOARD", False);
+	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
+	pasteprop = XInternAtom(dpy, "NOTE_PASTE", False);
 
 	swa.background_pixel = scheme[ColBg].pixel;
 	swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask | PropertyChangeMask;
@@ -758,6 +865,8 @@ run(void)
 	long left;
 
 	while (!quitflag) {
+		if (reloadflag)
+			reload();
 		while (XPending(dpy)) {
 			XNextEvent(dpy, &ev);
 			if (XFilterEvent(&ev, win))
@@ -791,6 +900,12 @@ run(void)
 					clock_gettime(CLOCK_MONOTONIC, &changed);
 				draw();
 				break;
+			case SelectionNotify:
+				paste(&ev.xselection);
+				if (bufdirty(buf))
+					clock_gettime(CLOCK_MONOTONIC, &changed);
+				draw();
+				break;
 			case ClientMessage:
 				if (ev.xclient.message_type == wmprotocols && (Atom)ev.xclient.data.l[0] == wmdelete)
 					quitflag = 1;
@@ -817,10 +932,10 @@ run(void)
 static void
 cleanup(void)
 {
-	if (blank()) {
+	if (!trashed && blank()) {
 		unlink(txtpath);
 		unlink(pospath);
-	} else {
+	} else if (!trashed) {
 		save();
 		writepos();
 	}
@@ -865,6 +980,8 @@ main(int argc, char *argv[])
 	sigaction(SIGTERM, &sa, NULL);
 	sigaction(SIGHUP, &sa, NULL);
 	sigaction(SIGINT, &sa, NULL);
+	sa.sa_handler = onreload;
+	sigaction(SIGUSR1, &sa, NULL);
 
 	notesdir();
 	buf = bufnew();

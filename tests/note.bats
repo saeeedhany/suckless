@@ -227,3 +227,45 @@ geometry() { xdotool getwindowgeometry --shell "$1" | grep -E "^$2=" | cut -d= -
   [ "$status" -ne 0 ]
   [ -z "$(xdotool search --class '^note$')" ]
 }
+
+@test "colors come from X resources and reload on SIGUSR1" {
+  start_dwm_note
+  printf 'note.background: #102030\n' | xrdb -merge
+  note & pid=$!; win=$(note_win)
+  x=$(( $(geometry "$win" X) + 3 )); y=$(( $(geometry "$win" Y) + 3 ))
+  wait_for_pixel "$x" "$y" '#102030'
+  printf 'note.background: #405060\n' | xrdb -merge
+  kill -USR1 "$pid"
+  wait_for_pixel "$x" "$y" '#405060'
+}
+
+@test "the default background is the black theme's" {
+  start_dwm_note
+  note & win=$(note_win)
+  wait_for_pixel $(( $(geometry "$win" X) + 3 )) $(( $(geometry "$win" Y) + 3 )) '#222424'
+}
+
+@test "ctrl shift d throws the note into the trash" {
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "bye"; sleep 0.6
+  xdotool key ctrl+shift+d; sleep 0.5
+  [ -z "$(xdotool search --class '^note$')" ]
+  [ "$(cat "$NOTES_DIR"/.trash/*.txt)" = "bye" ]
+  ls "$NOTES_DIR"/.trash/.*.pos >/dev/null
+  [ -z "$(ls "$NOTES_DIR"/*.txt 2>/dev/null)" ]
+}
+
+@test "ctrl shift v pastes the clipboard" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  printf 'from clip' | xclip -selection clipboard
+  note & win=$(note_win)
+  xdotool key ctrl+shift+v; sleep 0.8
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "from clip" ]
+}
+
+@test "the binary carries the marker theme looks for" {
+  make -C "$WORK" >/dev/null
+  grep -qa note.background "$WORK/note"
+}
