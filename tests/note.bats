@@ -319,8 +319,8 @@ text_gap() {
 
 text_extent() {
   xwd -id "$1" -silent | magick xwd:- txt:- 2>/dev/null |
-    sed -nE 's/^ *([0-9]+), *([0-9]+):.*(#[0-9A-Fa-f]{6}).*/\1 \2 \3/p' | awk '
-    $2 >= 9 && $2 < 26 && $1 > 0 {
+    sed -nE 's/^ *([0-9]+), *([0-9]+):.*(#[0-9A-Fa-f]{6}).*/\1 \2 \3/p' | awk -v y0="${2:-9}" -v y1="${3:-26}" '
+    $2 >= y0 && $2 < y1 && $1 > 0 {
       c = tolower($3)
       if (c == "#c2a46a") { if (bar == "" || $1 < bar) bar = $1 }
       else if (c != "#222424" && c != "#5a5a5a" && c != "#4e4e4e") {
@@ -361,13 +361,7 @@ text_extent() {
   make -C "$BATS_TEST_TMPDIR/dwm" >/dev/null 2>&1
   make -C "$WORK" >/dev/null
   export PATH="$WORK:$PATH" NOTES_DIR="$BATS_TEST_TMPDIR/notes" DISPLAY=:99
-  Xvfb :99 -screen 0 1600x600x24 -nolisten tcp -noreset >/dev/null 2>&1 & XVFB_PID=$!
-  for i in $(seq 50); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.1; done
-  xrandr --setmonitor left 800/200x600/150+0+0 screen >/dev/null
-  xrandr --setmonitor right 800/200x600/150+800+0 none >/dev/null
-  xrdb -load /dev/null
-  "$BATS_TEST_TMPDIR/dwm/dwm" & DWM_PID=$!
-  wait_for_pixel 400 5 '#282828'
+  start_two_monitors
   note -r; win=$(note_win)
   [ "$(geometry "$win" X)" -lt 0 ]
   xdotool mousemove 1200 300; sleep 0.2; xdotool key super+3; sleep 0.4
@@ -483,6 +477,16 @@ text_extent() {
   wait_for_pixel 103 103 '#222424'
 }
 
+start_two_monitors() {
+  Xvfb :99 -screen 0 1600x600x24 -nolisten tcp -noreset >/dev/null 2>&1 & XVFB_PID=$!
+  for i in $(seq 50); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.1; done
+  xrandr --setmonitor left 800/200x600/150+0+0 screen >/dev/null
+  xrandr --setmonitor right 800/200x600/150+800+0 none >/dev/null
+  xrdb -load /dev/null
+  "$BATS_TEST_TMPDIR/dwm/dwm" & DWM_PID=$!
+  wait_for_pixel 400 5 '#282828'
+}
+
 fake_dmenu() {
   mkdir -p "$BATS_TEST_TMPDIR/fake"
   printf '#!/bin/sh\ncat > "%s/menu"\n%s\n' "$BATS_TEST_TMPDIR" "$1" > "$BATS_TEST_TMPDIR/fake/dmenu"
@@ -533,4 +537,41 @@ two_notes() {
   fake_dmenu 'exit 1'
   note -p
   [ "$(cat "$BATS_TEST_TMPDIR/menu")" = "1  سلام" ]
+}
+
+@test "a wrapped arabic line keeps reading right to left on a row that starts with english" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'سلام سلام سلام سلام سلام سلام سلام سلام سلام helloworldlong' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  note -r; win=$(note_win); sleep 0.3
+  read -r bar left right < <(text_extent "$win" 30 44)
+  w=$(geometry "$win" WIDTH)
+  [ "$right" -ge $((w - 16)) ]
+}
+
+@test "typing english at the end of an arabic line puts the cursor right after the english" {
+  start_dwm_note
+  setxkbmap -layout ara
+  note & win=$(note_win)
+  xdotool type "سلام"
+  setxkbmap -layout us
+  xdotool type " abc"; sleep 0.4
+  read -r bar left right < <(text_extent "$win")
+  [ "$bar" -gt $((left + 20)) ]
+}
+
+@test "on two monitors a new note opens focused even when the other monitor was picked by keyboard" {
+  command -v xdotool >/dev/null || skip "xdotool not installed"
+  rsync -a "$REPO/dwm/" "$BATS_TEST_TMPDIR/dwm/"
+  make -C "$BATS_TEST_TMPDIR/dwm" >/dev/null 2>&1
+  make -C "$WORK" >/dev/null
+  export PATH="$WORK:$PATH" NOTES_DIR="$BATS_TEST_TMPDIR/notes" DISPLAY=:99
+  start_two_monitors
+  xdotool mousemove 1200 300; sleep 0.2
+  note & first=$(note_win)
+  xdotool key super+comma; sleep 0.3
+  note & win=$(note_win "$first")
+  xdotool type "hello"; sleep 0.6
+  [ "$(xdotool getactivewindow)" = "$win" ]
+  grep -qx hello "$NOTES_DIR"/*.txt
 }

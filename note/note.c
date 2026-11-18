@@ -658,6 +658,18 @@ cursorrow(void)
 	return nrows ? nrows - 1 : 0;
 }
 
+static int
+linedir(const char *s, size_t n, size_t at)
+{
+	size_t ls = at, le = at;
+
+	while (ls > 0 && s[ls - 1] != '\n')
+		ls--;
+	while (le < n && s[le] != '\n')
+		le++;
+	return bidiparadir(s + ls, le - ls);
+}
+
 static unsigned int
 rowstart(unsigned int w)
 {
@@ -667,12 +679,12 @@ rowstart(unsigned int w)
 }
 
 static void
-drawrow(const char *s, Row *row, unsigned int y)
+drawrow(const char *s, size_t n, Row *row, unsigned int y)
 {
 	char line[4096];
 	unsigned int w, x;
 
-	bidivis(&vis, s + row->start, row->end - row->start);
+	bidivis(&vis, s + row->start, row->end - row->start, linedir(s, n, row->start));
 	if (!vis.n)
 		return;
 	w = textw(vis.s, vis.n);
@@ -682,28 +694,51 @@ drawrow(const char *s, Row *row, unsigned int y)
 	drw_text(drw, x, y, ww > x + padding ? ww - x - padding : 1, lineh, 0, line, 0);
 }
 
+static size_t
+celllen(size_t j)
+{
+	return (j + 1 < vis.nc ? vis.off[j + 1] : vis.n) - vis.off[j];
+}
+
+static unsigned int
+rowend(unsigned int x0, unsigned int w)
+{
+	size_t j, last = 0;
+	unsigned int x;
+
+	if (!vis.nc)
+		return vis.base && ww > padding + 2 ? ww - padding - 2 : padding;
+	for (j = 1; j < vis.nc; j++)
+		if (vis.log[j] > vis.log[last])
+			last = j;
+	x = x0 + textw(vis.s, vis.off[last]);
+	if (vis.rtl[last])
+		return x >= padding + 2 ? x - 2 : x;
+	return x + textw(vis.s + vis.off[last], celllen(last));
+}
+
 static void
-drawcursor(const char *s, Row *row, unsigned int y)
+drawcursor(const char *s, size_t n, Row *row, unsigned int y)
 {
 	char glyph[8];
 	size_t rel = bufcursor(buf) - row->start, j, len;
 	unsigned int w, x0, x, cw;
 
-	bidivis(&vis, s + row->start, row->end - row->start);
+	bidivis(&vis, s + row->start, row->end - row->start, linedir(s, n, row->start));
 	w = textw(vis.s, vis.n);
 	x0 = rowstart(w);
 	for (j = 0; j < vis.nc && vis.log[j] != rel; j++)
 		;
 	drw_setscheme(drw, curscheme);
 	if (j == vis.nc) {
-		x = vis.base ? (x0 >= padding + 2 ? x0 - 2 : x0) : x0 + w;
+		x = rowend(x0, w);
 		if (bufmode(buf) == ModeInsert)
 			drw_rect(drw, x, y, 2, lineh, 1, 1);
 		else
 			drw_text(drw, vis.base && x >= charw ? x - charw + 2 : x, y, charw, lineh, 0, " ", 0);
 		return;
 	}
-	len = (j + 1 < vis.nc ? vis.off[j + 1] : vis.n) - vis.off[j];
+	len = celllen(j);
 	x = x0 + textw(vis.s, vis.off[j]);
 	cw = textw(vis.s + vis.off[j], len);
 	if (bufmode(buf) == ModeInsert) {
@@ -736,8 +771,8 @@ draw(void)
 	drw_setscheme(drw, scheme);
 	drw_rect(drw, 0, 0, ww, wh, 1, 1);
 	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh)
-		drawrow(s, &rows[r], y);
-	drawcursor(s, &rows[cr], padding + (cr - top) * lineh);
+		drawrow(s, n, &rows[r], y);
+	drawcursor(s, n, &rows[cr], padding + (cr - top) * lineh);
 	drw_map(drw, win, 0, 0, ww, wh);
 }
 

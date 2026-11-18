@@ -8,5 +8,6 @@ typedef struct {
 	int base;
 } Vis;
 
-int bidivis(Vis *v, const char *s, size_t n);
+int bidiparadir(const char *s, size_t n);
+int bidivis(Vis *v, const char *s, size_t n, int dir);
 void bidifree(Vis *v);

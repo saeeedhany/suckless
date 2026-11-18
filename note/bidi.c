@@ -106,7 +106,25 @@ identity(Vis *v, const char *s, size_t n, size_t *lo, size_t nc)
 }
 
 int
-bidivis(Vis *v, const char *s, size_t n)
+bidiparadir(const char *s, size_t n)
+{
+	FriBidiChar c;
+	FriBidiCharType t;
+	size_t i;
+
+	for (i = 0; i < n;) {
+		i += decode((const unsigned char *)s + i, n - i, &c);
+		t = fribidi_get_bidi_type(c);
+		if (t == FRIBIDI_TYPE_LTR)
+			return 0;
+		if (t == FRIBIDI_TYPE_RTL || t == FRIBIDI_TYPE_AL)
+			return 1;
+	}
+	return 0;
+}
+
+int
+bidivis(Vis *v, const char *s, size_t n, int dir)
 {
 	FriBidiChar *str;
 	FriBidiCharType *types;
@@ -114,10 +132,13 @@ bidivis(Vis *v, const char *s, size_t n)
 	FriBidiLevel *levels;
 	FriBidiArabicProp *joins;
 	FriBidiStrIndex *map;
-	FriBidiParType base = FRIBIDI_PAR_ON;
+	FriBidiParType base;
 	size_t *lo, nc = 0, i, j, k;
 	int rtl = 0, ok;
 
+	if (dir < 0)
+		dir = bidiparadir(s, n);
+	base = dir ? FRIBIDI_PAR_RTL : FRIBIDI_PAR_LTR;
 	reserve(v, 4 * n + 1, n + 1);
 	str = grow(NULL, (n + 1) * sizeof *str);
 	lo = grow(NULL, (n + 1) * sizeof *lo);
@@ -127,7 +148,7 @@ bidivis(Vis *v, const char *s, size_t n)
 		if (FRIBIDI_IS_RTL(fribidi_get_bidi_type(str[nc])))
 			rtl = 1;
 	}
-	if (!rtl) {
+	if (!rtl && !dir) {
 		identity(v, s, n, lo, nc);
 		free(str);
 		free(lo);
@@ -146,7 +167,8 @@ bidivis(Vis *v, const char *s, size_t n)
 	if (ok) {
 		fribidi_get_joining_types(str, nc, joins);
 		fribidi_join_arabic(types, nc, levels, joins);
-		fribidi_shape(FRIBIDI_FLAG_SHAPE_MIRRORING | FRIBIDI_FLAG_SHAPE_ARAB_PRES, levels, nc, joins, str);
+		fribidi_shape(FRIBIDI_FLAG_SHAPE_MIRRORING | FRIBIDI_FLAG_SHAPE_ARAB_PRES | FRIBIDI_FLAG_SHAPE_ARAB_LIGA,
+		              levels, nc, joins, str);
 		ok = fribidi_reorder_line(FRIBIDI_FLAGS_DEFAULT, types, nc, 0, base, levels, NULL, map) != 0;
 	}
 	if (!ok) {
@@ -160,11 +182,13 @@ bidivis(Vis *v, const char *s, size_t n)
 				v->s[k++] = s[lo[map[j]]];
 				continue;
 			}
+			if (str[map[j]] == FRIBIDI_CHAR_FILL)
+				continue;
 			k += encode(str[map[j]], v->s + k);
 		}
 		v->n = k;
 		v->nc = nc;
-		v->base = FRIBIDI_IS_RTL(base) ? 1 : 0;
+		v->base = dir;
 	}
 	free(types);
 	free(brackets);
