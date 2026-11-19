@@ -643,3 +643,12 @@ two_notes() {
   xdotool key super+period super+3; sleep 0.4
   [ "$(geometry "$win" X)" -ge 800 ]
 }
+
+@test "a broken byte before a line break keeps the next line on its own row" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'x\xd8\nab' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  note -o 20260101-000000 & win=$(note_win)
+  read -r bar left right < <(text_extent "$win" 30 44)
+  [ "$right" -gt 0 ]
+}

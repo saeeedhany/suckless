@@ -387,6 +387,12 @@ typedef struct {
 	int open;
 } Entry;
 
+static int
+ignoreerror(Display *d, XErrorEvent *e)
+{
+	return 0;
+}
+
 static void
 activate(const char *want)
 {
@@ -398,9 +404,11 @@ activate(const char *want)
 	unsigned long n, after;
 	unsigned char *data;
 	XEvent ev;
+	XErrorHandler old;
 
 	if (!(d = XOpenDisplay(NULL)))
 		return;
+	old = XSetErrorHandler(ignoreerror);
 	noteid = XInternAtom(d, "_NOTE_ID", False);
 	active = XInternAtom(d, "_NET_ACTIVE_WINDOW", False);
 	r = DefaultRootWindow(d);
@@ -425,6 +433,7 @@ activate(const char *want)
 			XFree(kids);
 	}
 	XCloseDisplay(d);
+	XSetErrorHandler(old);
 }
 
 static int
@@ -630,16 +639,24 @@ makeschemes(void)
 	curscheme = drw_scm_create(drw, cols, 2);
 }
 
-static int
-utf8len(unsigned char c)
+static size_t
+utf8len(const char *s, size_t n)
 {
+	unsigned char c = s[0];
+	size_t len = 1, i;
+
 	if ((c & 0xe0) == 0xc0)
-		return 2;
-	if ((c & 0xf0) == 0xe0)
-		return 3;
-	if ((c & 0xf8) == 0xf0)
-		return 4;
-	return 1;
+		len = 2;
+	else if ((c & 0xf0) == 0xe0)
+		len = 3;
+	else if ((c & 0xf8) == 0xf0)
+		len = 4;
+	if (len > n)
+		return 1;
+	for (i = 1; i < len; i++)
+		if (((unsigned char)s[i] & 0xc0) != 0x80)
+			return 1;
+	return len;
 }
 
 static unsigned int
@@ -682,7 +699,7 @@ layout(void)
 		w = 0;
 		space = 0;
 		for (i = start; i < n && s[i] != '\n'; i += len) {
-			len = MIN((size_t)utf8len(s[i]), n - i);
+			len = utf8len(s + i, n - i);
 			w += textw(s + i, len);
 			if (w > avail && i > start)
 				break;
@@ -837,8 +854,10 @@ draw(void)
 	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh)
 		drawrow(s, n, &rows[r], y);
 	drawcursor(s, n, &rows[cr], padding + (cr - top) * lineh);
-	if (savefailed)
+	if (savefailed) {
+		drw_setscheme(drw, curscheme);
 		drw_rect(drw, ww > 7 ? ww - 7 : 0, 1, 5, 5, 1, 1);
+	}
 	drw_map(drw, win, 0, 0, ww, wh);
 }
 
