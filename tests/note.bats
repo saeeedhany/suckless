@@ -738,6 +738,7 @@ two_notes() {
   kill "$pid"; wait "$pid" || true
   sleep 0.3
   [ "$(pgrep -fc "$WORK/note")" -eq 1 ]
+  [ "$(cat /proc/"$(pgrep -f "$WORK/note")"/comm)" = "note-clip" ]
   printf 'new' | xclip -selection clipboard; sleep 0.5
   [ "$(pgrep -fc "$WORK/note")" -eq 0 ]
   [ "$(timeout 2 xclip -o -selection clipboard)" = "new" ]

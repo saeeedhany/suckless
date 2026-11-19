@@ -11,6 +11,9 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <sys/file.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -1186,6 +1189,9 @@ keepclip(void)
 	if (!clip || XGetSelectionOwner(dpy, clipboard) != win || fork() != 0)
 		return;
 	setsid();
+#ifdef __linux__
+	prctl(PR_SET_NAME, "note-clip");
+#endif
 	signal(SIGTERM, SIG_DFL);
 	signal(SIGINT, SIG_DFL);
 	signal(SIGHUP, SIG_DFL);

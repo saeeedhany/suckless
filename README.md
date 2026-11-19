@@ -87,7 +87,7 @@ counts. Commands follow the physical key, so they work in the Arabic layout too.
 
 Every yank also goes to the system clipboard, and `ctrl shift y` copies the
 whole note. X keeps no copy of the clipboard itself, so when a note closes
-while its text is still the latest copy, a small `note` process stays behind
+while its text is still the latest copy, a small `note-clip` process stays behind
 to hand it out, and quits as soon as anything else is copied. `ctrl shift v`
 pastes the clipboard.
 
