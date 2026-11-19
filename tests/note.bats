@@ -665,3 +665,47 @@ two_notes() {
   [ "$(wc -l < "$BATS_TEST_TMPDIR/menu")" -eq 2 ]
   ! grep -q "(open)" "$BATS_TEST_TMPDIR/menu"
 }
+
+@test "yy copies the line to the clipboard" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "first"; xdotool key Return; xdotool type "second"
+  xdotool key Escape; xdotool type "kyy"; sleep 0.3
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "first" ]
+}
+
+@test "yw copies a word to the clipboard" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "buy milk"
+  xdotool key Escape; xdotool type "0yw"; sleep 0.3
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "buy " ]
+}
+
+@test "ctrl shift y copies the whole note to the clipboard" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "one"; xdotool key Return; xdotool type "سلام"
+  xdotool key ctrl+shift+y; sleep 0.3
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "$(printf 'one\nسلام')" ]
+}
+
+@test "deleting text leaves the clipboard alone" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  printf 'keep' | xclip -selection clipboard
+  note & win=$(note_win)
+  xdotool type "gone"; xdotool key Escape; xdotool type "dd"; sleep 0.3
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "keep" ]
+}
+
+@test "a note pastes what it copied itself" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "twice"; xdotool key Escape; xdotool type "yyA"; xdotool key ctrl+shift+v; sleep 0.8
+  [ "$(cat "$NOTES_DIR"/*.txt)" = "twicetwice" ]
+}

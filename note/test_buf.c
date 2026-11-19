@@ -111,6 +111,29 @@ checkcap(void)
 	buffree(b);
 }
 
+static void
+checkyank(const char *name, const char *start, size_t cur, const char *keys, int want, const char *wanttext)
+{
+	Buf *b = bufnew();
+	const char *s;
+	size_t n;
+	int got;
+
+	bufload(b, start, strlen(start));
+	bufsetcursor(b, cur);
+	bufsetmode(b, ModeNormal);
+	feed(b, keys);
+	got = bufyanked(b, &s, &n);
+	if (got != want || (want && (n != strlen(wanttext) || memcmp(s, wanttext, n)))) {
+		printf("FAIL %s: yanked %d\n", name, got);
+		failed++;
+	} else if (want && bufyanked(b, &s, &n)) {
+		printf("FAIL %s: yank reported twice\n", name);
+		failed++;
+	}
+	buffree(b);
+}
+
 int
 main(void)
 {
@@ -161,6 +184,12 @@ main(void)
 	check("utf8 h", "\xd8\xb3\xd9\x84", 2, ModeNormal, "h", "\xd8\xb3\xd9\x84", 0, ModeNormal);
 	checkdirty();
 	checkcap();
+	checkyank("yy yanks the line", "one\ntwo", 0, "yy", 1, "one");
+	checkyank("2yy yanks two lines", "one\ntwo\nthree", 0, "2yy", 1, "one\ntwo");
+	checkyank("yw yanks a word", "hello there", 0, "yw", 1, "hello ");
+	checkyank("dd is not a yank", "one\ntwo", 0, "dd", 0, "");
+	checkyank("x is not a yank", "one", 0, "x", 0, "");
+	checkyank("moving is not a yank", "one", 0, "l", 0, "");
 	if (failed)
 		printf("%d failed\n", failed);
 	else

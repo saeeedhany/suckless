@@ -21,3 +21,4 @@ void bufinsert(Buf *b, const char *s, size_t n);
 void bufkey(Buf *b, int key);
 int bufdirty(Buf *b);
 void bufclean(Buf *b);
+int bufyanked(Buf *b, const char **s, size_t *n);

@@ -47,12 +47,14 @@ static Drw *drw;
 static Clr *scheme, *curscheme;
 static XIM xim;
 static XIC xic;
-static Atom wmdelete, wmprotocols, netwmstate, netsticky, clientinfo, clipboard, utf8string, pasteprop;
+static Atom wmdelete, wmprotocols, netwmstate, netsticky, clientinfo, clipboard, utf8string, pasteprop, targets;
 static Buf *buf;
 static char dir[PATH_MAX], id[64], txtpath[PATH_MAX], pospath[PATH_MAX];
 static unsigned int ww, wh, lineh, charw;
 static Row *rows;
 static size_t nrows, rowcap, top;
+static char *clip;
+static size_t clipn;
 static Vis vis;
 static struct timespec changed, firstchange;
 static int pending, savefailed;
@@ -1114,9 +1116,58 @@ paste(XSelectionEvent *ev)
 }
 
 static void
+copy(const char *s, size_t n, Time t)
+{
+	if (!n)
+		return;
+	clip = realloc(clip, n);
+	if (!clip) {
+		clipn = 0;
+		return;
+	}
+	memcpy(clip, s, n);
+	clipn = n;
+	XSetSelectionOwner(dpy, clipboard, win, t);
+}
+
+static void
+selrequest(XSelectionRequestEvent *rq)
+{
+	XEvent ev;
+	XErrorHandler old;
+	Atom prop = rq->property == None ? rq->target : rq->property;
+	Atom list[3] = { targets, utf8string, XA_STRING };
+	long max = XExtendedMaxRequestSize(dpy) ? XExtendedMaxRequestSize(dpy) : XMaxRequestSize(dpy);
+
+	memset(&ev, 0, sizeof ev);
+	ev.xselection.type = SelectionNotify;
+	ev.xselection.requestor = rq->requestor;
+	ev.xselection.selection = rq->selection;
+	ev.xselection.target = rq->target;
+	ev.xselection.time = rq->time;
+	ev.xselection.property = None;
+	XSync(dpy, False);
+	old = XSetErrorHandler(ignoreerror);
+	if (rq->selection == clipboard && clip) {
+		if (rq->target == targets) {
+			XChangeProperty(dpy, rq->requestor, prop, XA_ATOM, 32, PropModeReplace, (unsigned char *)list, LENGTH(list));
+			ev.xselection.property = prop;
+		} else if ((rq->target == utf8string || rq->target == XA_STRING) && clipn < (size_t)max * 4 - 64) {
+			XChangeProperty(dpy, rq->requestor, prop, rq->target, 8, PropModeReplace, (unsigned char *)clip, clipn);
+			ev.xselection.property = prop;
+		}
+	}
+	XSendEvent(dpy, rq->requestor, False, 0, &ev);
+	XSync(dpy, False);
+	XSetErrorHandler(old);
+}
+
+static void
 keypress(XKeyEvent *ev)
 {
 	char text[64];
+	const char *s;
+	size_t n;
 	KeySym k = physical(ev), ksym;
 	Status status;
 	int len, sp;
@@ -1128,6 +1179,10 @@ keypress(XKeyEvent *ev)
 			nextcolor();
 		else if (k == XK_V || k == XK_v)
 			XConvertSelection(dpy, clipboard, utf8string, pasteprop, win, ev->time);
+		else if (k == XK_Y || k == XK_y) {
+			s = buftext(buf, &n);
+			copy(s, n, ev->time);
+		}
 		return;
 	}
 	if (ev->state & ControlMask) {
@@ -1145,6 +1200,8 @@ keypress(XKeyEvent *ev)
 	if (bufmode(buf) == ModeNormal) {
 		if (k >= 0x20 && k < 0x7f)
 			bufkey(buf, (int)k);
+		if (bufyanked(buf, &s, &n))
+			copy(s, n, ev->time);
 		return;
 	}
 	len = Xutf8LookupString(xic, ev, text, sizeof text, &ksym, &status);
@@ -1241,6 +1298,7 @@ setup(int fresh)
 	clipboard = XInternAtom(dpy, "CLIPBOARD", False);
 	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
 	pasteprop = XInternAtom(dpy, "NOTE_PASTE", False);
+	targets = XInternAtom(dpy, "TARGETS", False);
 
 	swa.background_pixel = scheme[ColBg].pixel;
 	swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask | PropertyChangeMask | FocusChangeMask;
@@ -1344,6 +1402,14 @@ run(void)
 				keypress(&ev.xkey);
 				touched();
 				draw();
+				break;
+			case SelectionRequest:
+				selrequest(&ev.xselectionrequest);
+				break;
+			case SelectionClear:
+				free(clip);
+				clip = NULL;
+				clipn = 0;
 				break;
 			case SelectionNotify:
 				paste(&ev.xselection);

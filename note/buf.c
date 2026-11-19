@@ -21,7 +21,7 @@ struct Buf {
 	int count, op, opcount;
 	char *reg;
 	size_t regn;
-	int reglines;
+	int reglines, yanked;
 	Snap *undo, *redo;
 };
 
@@ -309,8 +309,10 @@ linesop(Buf *b, int op, size_t count)
 	size_t ls = linestart(b, b->cur), le = lineafter(b, ls, count);
 
 	setreg(b, ls, le, 1);
-	if (op == 'y')
+	if (op == 'y') {
+		b->yanked = 1;
 		return;
+	}
 	pushundo(b);
 	if (op == 'c') {
 		deleterange(b, ls, le);
@@ -409,8 +411,10 @@ operate(Buf *b, int op, int key, size_t count)
 	if (to > e)
 		to = e;
 	setreg(b, b->cur, to, 0);
-	if (op == 'y')
+	if (op == 'y') {
+		b->yanked = 1;
 		return;
+	}
 	pushundo(b);
 	deleterange(b, b->cur, to);
 	if (op == 'c') {
@@ -786,4 +790,15 @@ void
 bufclean(Buf *b)
 {
 	b->dirty = 0;
+}
+
+int
+bufyanked(Buf *b, const char **s, size_t *n)
+{
+	if (!b->yanked)
+		return 0;
+	b->yanked = 0;
+	*s = b->reg;
+	*n = b->regn;
+	return 1;
 }
