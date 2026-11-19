@@ -361,6 +361,20 @@ claimable(const char *other)
 	return 1;
 }
 
+static int
+isopen(const char *other)
+{
+	int fd, held;
+
+	snprintf(id, sizeof id, "%s", other);
+	setpaths();
+	if ((fd = open(pospath, O_RDONLY)) < 0)
+		return 0;
+	held = flock(fd, LOCK_EX | LOCK_NB) < 0 && errno == EWOULDBLOCK;
+	close(fd);
+	return held;
+}
+
 static void
 restoreall(const char *self)
 {
@@ -502,7 +516,7 @@ pick(const char *self)
 		snprintf(list[n].id, sizeof list[n].id, "%s", other);
 		list[n].mtime = st.st_mtime;
 		firstline(path, list[n].first, sizeof list[n].first);
-		list[n].open = !claimable(other);
+		list[n].open = isopen(other);
 		n++;
 	}
 	closedir(d);
@@ -547,11 +561,11 @@ pick(const char *self)
 		}
 	k = strtol(reply, NULL, 10);
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && k >= 1 && (size_t)k <= n) {
-		if (claimable(list[k - 1].id)) {
+		if (isopen(list[k - 1].id)) {
+			activate(list[k - 1].id);
+		} else if (claimable(list[k - 1].id)) {
 			selfpath(exe, sizeof exe, self);
 			spawnopen(exe, list[k - 1].id);
-		} else {
-			activate(list[k - 1].id);
 		}
 	}
 	free(list);

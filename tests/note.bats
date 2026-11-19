@@ -596,6 +596,7 @@ two_notes() {
 }
 
 @test "a note shows a mark while its saves fail, and drops it once a save works" {
+  [ "$(id -u)" -ne 0 ] || skip "root can write to any folder"
   start_dwm_note
   note & win=$(note_win)
   x=$(( $(geometry "$win" X) + $(geometry "$win" WIDTH) - 4 )); y=$(( $(geometry "$win" Y) + 3 ))
@@ -651,4 +652,16 @@ two_notes() {
   note -o 20260101-000000 & win=$(note_win)
   read -r bar left right < <(text_extent "$win" 30 44)
   [ "$right" -gt 0 ]
+}
+
+@test "the picker marks no note as open when the notes folder is read only" {
+  [ "$(id -u)" -ne 0 ] || skip "root can write to any folder"
+  two_notes
+  start_dwm_note
+  chmod 500 "$NOTES_DIR"
+  fake_dmenu 'exit 1'
+  note -p
+  chmod 700 "$NOTES_DIR"
+  [ "$(wc -l < "$BATS_TEST_TMPDIR/menu")" -eq 2 ]
+  ! grep -q "(open)" "$BATS_TEST_TMPDIR/menu"
 }
