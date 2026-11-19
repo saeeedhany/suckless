@@ -772,3 +772,32 @@ two_notes() {
   [ "$bar" -gt 0 ]
   [ "$bar" -lt $(( $(geometry "$win" WIDTH) / 2 )) ]
 }
+
+@test "v shows the selection in swapped colors and esc clears it" {
+  start_dwm_note
+  note & win=$(note_win)
+  x=$(( $(geometry "$win" X) + 10 )); y=$(( $(geometry "$win" Y) + 9 ))
+  xdotool type "hello world"; xdotool key Escape; xdotool type "0vll"
+  wait_for_pixel "$x" "$y" '#c8c5bf'
+  xdotool key Escape
+  wait_for_pixel "$x" "$y" '#222424'
+}
+
+@test "v then y copies the selection to the clipboard" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "hello world"; xdotool key Escape; xdotool type "0wvey"; sleep 0.3
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "world" ]
+}
+
+@test "a selection on an arabic line is drawn on the right" {
+  start_dwm_note
+  setxkbmap -layout ara
+  note & win=$(note_win)
+  x=$(( $(geometry "$win" X) + $(geometry "$win" WIDTH) - 10 )); y=$(( $(geometry "$win" Y) + 9 ))
+  xdotool type "مرحبا بكم"; xdotool key Escape
+  setxkbmap -layout us,ara
+  xdotool key 0 v l l
+  wait_for_pixel "$x" "$y" '#c8c5bf'
+}

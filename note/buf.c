@@ -16,7 +16,7 @@ struct Snap {
 
 struct Buf {
 	char *s;
-	size_t n, cap, cur, want;
+	size_t n, cap, cur, want, anchor;
 	int mode, dirty, insession;
 	int count, op, opcount, opg, ophad;
 	char *reg;
@@ -127,7 +127,7 @@ clamp(Buf *b)
 
 	if (b->cur > b->n)
 		b->cur = b->n;
-	if (b->mode != ModeNormal)
+	if (b->mode == ModeInsert)
 		return;
 	ls = linestart(b, b->cur);
 	le = lineend(b, b->cur);
@@ -674,6 +674,14 @@ normalkey(Buf *b, int key)
 	case 'J':
 		join(b);
 		break;
+	case 'v':
+		b->anchor = b->cur;
+		b->mode = ModeVisual;
+		break;
+	case 'V':
+		b->anchor = b->cur;
+		b->mode = ModeVisualLine;
+		break;
 	case 'p':
 		put(b, 1, n);
 		break;
@@ -853,6 +861,72 @@ bufinsert(Buf *b, const char *s, size_t n)
 	b->cur += n;
 }
 
+static int
+selrange(Buf *b, size_t *from, size_t *to)
+{
+	size_t lo = b->anchor < b->cur ? b->anchor : b->cur;
+	size_t hi = b->anchor < b->cur ? b->cur : b->anchor;
+
+	if (b->mode == ModeVisualLine) {
+		*from = linestart(b, lo);
+		*to = lineend(b, hi);
+		return 2;
+	}
+	if (b->mode == ModeVisual) {
+		*from = lo;
+		*to = hi < b->n ? next(b, hi) : hi;
+		return 1;
+	}
+	return 0;
+}
+
+static void
+visualkey(Buf *b, int key)
+{
+	size_t from, to, t;
+	int kind;
+
+	if (b->op == 'g' || (key > 0 && key < 0x80 && strchr("0123456789hjklwbe^$Gg", key)) || key == KeyLeft ||
+	    key == KeyRight || key == KeyUp || key == KeyDown || key == KeyHome || key == KeyEnd) {
+		normalkey(b, key);
+		return;
+	}
+	switch (key) {
+	case 'v': case 'V':
+		if ((key == 'V') == (b->mode == ModeVisualLine))
+			b->mode = ModeNormal;
+		else
+			b->mode = key == 'V' ? ModeVisualLine : ModeVisual;
+		break;
+	case 'o':
+		t = b->anchor;
+		b->anchor = b->cur;
+		b->cur = t;
+		break;
+	case 'y': case 'd': case 'x': case 'c':
+		kind = selrange(b, &from, &to);
+		b->mode = ModeNormal;
+		if (key == 'x')
+			key = 'd';
+		if (kind == 2)
+			linesrange(b, key, from, to);
+		else
+			charsrange(b, key, from, to);
+		break;
+	case KeyEsc:
+		b->mode = ModeNormal;
+		break;
+	}
+	b->count = b->op = 0;
+	clamp(b);
+}
+
+int
+bufselection(Buf *b, size_t *from, size_t *to)
+{
+	return selrange(b, from, to);
+}
+
 void
 bufkey(Buf *b, int key)
 {
@@ -862,8 +936,10 @@ bufkey(Buf *b, int key)
 	}
 	if (b->mode == ModeInsert)
 		insertkey(b, key);
-	else
+	else if (b->mode == ModeNormal)
 		normalkey(b, key);
+	else
+		visualkey(b, key);
 }
 
 int

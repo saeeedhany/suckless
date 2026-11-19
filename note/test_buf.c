@@ -134,6 +134,35 @@ checkyank(const char *name, const char *start, size_t cur, const char *keys, int
 	buffree(b);
 }
 
+static void
+checksel(void)
+{
+	Buf *b = bufnew();
+	size_t from = 9, to = 9;
+	int k;
+
+	bufload(b, "ab\ncd", 5);
+	bufsetmode(b, ModeNormal);
+	if (bufselection(b, &from, &to)) {
+		printf("FAIL no selection in normal mode\n");
+		failed++;
+	}
+	bufsetcursor(b, 1);
+	feed(b, "vj");
+	k = bufselection(b, &from, &to);
+	if (k != 1 || from != 1 || to != 5) {
+		printf("FAIL v selection: %d %zu %zu\n", k, from, to);
+		failed++;
+	}
+	feed(b, "V");
+	k = bufselection(b, &from, &to);
+	if (k != 2 || from != 0 || to != 5) {
+		printf("FAIL V selection: %d %zu %zu\n", k, from, to);
+		failed++;
+	}
+	buffree(b);
+}
+
 int
 main(void)
 {
@@ -200,6 +229,19 @@ main(void)
 	check("ygg moves to the top", "a\nb\nc", 4, ModeNormal, "ygg", "a\nb\nc", 0, ModeNormal);
 	check("y$ p", "ab cd", 3, ModeNormal, "y$0P", "cdab cd", 1, ModeNormal);
 	check("yj p", "a\nb\nc", 0, ModeNormal, "yjGp", "a\nb\nc\na\nb", 6, ModeNormal);
+	check("v d", "abcd", 0, ModeNormal, "vlld", "d", 0, ModeNormal);
+	check("v x", "abcd", 1, ModeNormal, "vlx", "ad", 1, ModeNormal);
+	check("v c", "one two", 0, ModeNormal, "vecX\x1b", "X two", 0, ModeNormal);
+	check("v y moves to the start", "one two", 4, ModeNormal, "vby", "one two", 0, ModeNormal);
+	check("v esc", "ab", 0, ModeNormal, "vl\x1b", "ab", 1, ModeNormal);
+	check("v v leaves", "ab", 0, ModeNormal, "vv", "ab", 0, ModeNormal);
+	check("v o swaps the ends", "abcd", 1, ModeNormal, "vlohd", "d", 0, ModeNormal);
+	check("v stays visual while moving", "abc", 0, ModeNormal, "vl", "abc", 1, ModeVisual);
+	check("V d", "a\nb\nc", 0, ModeNormal, "Vjd", "c", 0, ModeNormal);
+	check("V c", "a\nb\nc", 2, ModeNormal, "VczZ\x1b", "a\nzZ\nc", 3, ModeNormal);
+	check("V y p", "a\nb\nc", 0, ModeNormal, "VjyGp", "a\nb\nc\na\nb", 6, ModeNormal);
+	check("v keys that edit do nothing", "abc", 0, ModeNormal, "vpJiu", "abc", 0, ModeVisual);
+	checksel();
 	check("undo insert session", "", 0, ModeInsert, "hello world\x1bu", "", 0, ModeNormal);
 	check("redo", "", 0, ModeInsert, "hello\x1bu\x12", "hello", 4, ModeNormal);
 	check("undo dd", "a\nb", 0, ModeNormal, "ddu", "a\nb", 0, ModeNormal);
@@ -222,6 +264,15 @@ main(void)
 	checkyank("yj on the last line", "a\nb", 2, "yj", 0, "");
 	checkyank("yb across a line", "one\ntwo", 4, "yb", 1, "one\n");
 	checkyank("ye across a line", "one\ntwo", 2, "ye", 1, "e\ntwo");
+	checkyank("v e y", "hello world", 0, "vey", 1, "hello");
+	checkyank("v backwards", "one two", 4, "vby", 1, "one t");
+	checkyank("v across lines", "ab\ncd", 1, "vjy", 1, "b\ncd");
+	checkyank("v $ y stops before the line break", "ab cd", 3, "v$y", 1, "cd");
+	checkyank("v count", "abcd", 0, "v2ly", 1, "abc");
+	checkyank("v gg", "a\nb\nc", 4, "vggy", 1, "a\nb\nc");
+	checkyank("V y", "a\nb\nc", 2, "Vjy", 1, "b\nc");
+	checkyank("v then V", "ab\ncd", 1, "vVy", 1, "ab");
+	checkyank("v esc is not a yank", "ab", 0, "vl\x1b", 0, "");
 	checkyank("dd is not a yank", "one\ntwo", 0, "dd", 0, "");
 	checkyank("x is not a yank", "one", 0, "x", 0, "");
 	checkyank("moving is not a yank", "one", 0, "l", 0, "");

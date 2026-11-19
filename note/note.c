@@ -47,7 +47,7 @@ static Display *dpy;
 static int screen;
 static Window root, win;
 static Drw *drw;
-static Clr *scheme, *curscheme;
+static Clr *scheme, *curscheme, *selscheme;
 static XIM xim;
 static XIC xic;
 static Atom wmdelete, wmprotocols, netwmstate, netsticky, clientinfo, clipboard, utf8string, pasteprop, targets;
@@ -656,6 +656,9 @@ makeschemes(void)
 	cols[ColFg] = palette[color];
 	cols[ColBg] = cursorcolor;
 	curscheme = drw_scm_create(drw, cols, 2);
+	cols[ColFg] = palette[color];
+	cols[ColBg] = foreground;
+	selscheme = drw_scm_create(drw, cols, 2);
 }
 
 static size_t
@@ -808,6 +811,40 @@ celllen(size_t j)
 	return (j + 1 < vis.nc ? vis.off[j + 1] : vis.n) - vis.off[j];
 }
 
+static void
+drawsel(const char *s, size_t n, Row *row, unsigned int y)
+{
+	char glyph[8];
+	size_t from, to, at, j, len;
+	unsigned int w, x0, x, cw;
+	int kind;
+
+	if (!(kind = bufselection(buf, &from, &to)) || to < row->start || from > row->end)
+		return;
+	bidivis(&vis, s + row->start, row->end - row->start, linedir(s, n, row->start));
+	drw_setscheme(drw, selscheme);
+	if (!vis.nc) {
+		if (from <= row->start && (kind == 2 ? row->start <= to : row->start < to))
+			drw_rect(drw, vis.base && ww > padding + charw ? ww - padding - charw : padding, y, charw, lineh, 1, 1);
+		drw_setscheme(drw, scheme);
+		return;
+	}
+	w = textw(vis.s, vis.n);
+	x0 = rowstart(w);
+	for (j = 0; j < vis.nc; j++) {
+		at = row->start + vis.log[j];
+		if (at < from || at >= to)
+			continue;
+		len = MIN(celllen(j), sizeof glyph - 1);
+		memcpy(glyph, vis.s + vis.off[j], len);
+		glyph[len] = '\0';
+		x = x0 + textw(vis.s, vis.off[j]);
+		cw = textw(vis.s + vis.off[j], celllen(j));
+		drw_text(drw, x, y, cw ? cw : charw, lineh, 0, glyph, 0);
+	}
+	drw_setscheme(drw, scheme);
+}
+
 static unsigned int
 rowend(unsigned int x0, unsigned int w)
 {
@@ -880,6 +917,8 @@ draw(void)
 	drw_rect(drw, 0, 0, ww, wh, 1, 1);
 	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh)
 		drawrow(s, n, &rows[r], y);
+	for (r = top, y = padding; r < nrows && r < top + visible; r++, y += lineh)
+		drawsel(s, n, &rows[r], y);
 	drawcursor(s, n, &rows[cr], padding + (cr - top) * lineh);
 	if (savefailed) {
 		drw_setscheme(drw, curscheme);
@@ -1058,6 +1097,7 @@ recolor(void)
 {
 	drw_scm_free(drw, scheme, 2);
 	drw_scm_free(drw, curscheme, 2);
+	drw_scm_free(drw, selscheme, 2);
 	makeschemes();
 	XSetWindowBackground(dpy, win, scheme[ColBg].pixel);
 	draw();
@@ -1252,7 +1292,7 @@ keypress(XKeyEvent *ev)
 		bufkey(buf, sp);
 		return;
 	}
-	if (bufmode(buf) == ModeNormal) {
+	if (bufmode(buf) != ModeInsert) {
 		if (k >= 0x20 && k < 0x7f)
 			bufkey(buf, (int)k);
 		if (bufyanked(buf, &s, &n))

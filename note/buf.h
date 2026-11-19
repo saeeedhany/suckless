@@ -1,6 +1,6 @@
 #include <stddef.h>
 
-enum { ModeInsert, ModeNormal };
+enum { ModeInsert, ModeNormal, ModeVisual, ModeVisualLine };
 enum {
 	KeyEsc = 0x100, KeyReturn, KeyTab, KeyBackspace, KeyDelete,
 	KeyLeft, KeyRight, KeyUp, KeyDown, KeyHome, KeyEnd,
@@ -22,3 +22,4 @@ void bufkey(Buf *b, int key);
 int bufdirty(Buf *b);
 void bufclean(Buf *b);
 int bufyanked(Buf *b, const char **s, size_t *n);
+int bufselection(Buf *b, size_t *from, size_t *to);

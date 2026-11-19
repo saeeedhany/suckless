@@ -83,13 +83,15 @@ It starts in insert mode. Escape gives a small vim normal mode: `h j k l`,
 `w b e`, `0 ^ $`, `gg G`, `x`, `D`, `C`, `r`, `J`, `p`, `P`, `i a I A o O`, `u`
 and `ctrl r`, and the operators `d`, `c` and `y` with the motions `w e b`,
 `h l`, `0 ^ $`, `j k` and `gg G` (`dd`, `cw`, `y$`, `d2j`, `ygg`), all with
-counts. Commands follow the physical key, so they work in the Arabic layout too.
+counts. `v` selects by letter and `V` by line; the motions move the selection,
+`o` jumps to its other end, and `y`, `d`, `x` or `c` act on it. Commands follow
+the physical key, so they work in the Arabic layout too.
 
 Every yank also goes to the system clipboard, and `ctrl shift y` copies the
-whole note. X keeps no copy of the clipboard itself, so when a note closes
-while its text is still the latest copy, a small `note-clip` process stays behind
-to hand it out, and quits as soon as anything else is copied. `ctrl shift v`
-pastes the clipboard.
+whole note. X keeps no copy of the clipboard itself, so when a note closes while
+its text is still the latest copy, a small `note-clip` process stays behind to
+hand it out, and quits as soon as anything else is copied. `ctrl shift v` pastes
+the clipboard.
 
 A line that starts with Arabic reads right to left and sits against the right
 edge, with its letters joined (`note/bidi.c`, FriBidi like st). An empty line
