@@ -709,3 +709,36 @@ two_notes() {
   xdotool type "twice"; xdotool key Escape; xdotool type "yyA"; xdotool key ctrl+shift+v; sleep 0.8
   [ "$(cat "$NOTES_DIR"/*.txt)" = "twicetwice" ]
 }
+
+@test "copied text stays on the clipboard after the note closes" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & pid=$!; win=$(note_win)
+  xdotool type "keep me"; xdotool key Escape; xdotool type "yy"; sleep 0.3
+  kill "$pid"; wait "$pid" || true
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "keep me" ]
+}
+
+@test "the process that keeps the clipboard does not hold the note open" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & pid=$!; win=$(note_win)
+  xdotool type "held"; xdotool key Escape; xdotool type "yy"; sleep 0.3
+  kill "$pid"; wait "$pid" || true
+  fake_dmenu 'exit 1'
+  note -p
+  ! grep -q "(open)" "$BATS_TEST_TMPDIR/menu"
+}
+
+@test "the process that keeps the clipboard leaves once something else is copied" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  "$WORK/note" & pid=$!; win=$(note_win)
+  xdotool type "old"; xdotool key Escape; xdotool type "yy"; sleep 0.3
+  kill "$pid"; wait "$pid" || true
+  sleep 0.3
+  [ "$(pgrep -fc "$WORK/note")" -eq 1 ]
+  printf 'new' | xclip -selection clipboard; sleep 0.5
+  [ "$(pgrep -fc "$WORK/note")" -eq 0 ]
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "new" ]
+}

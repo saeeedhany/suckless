@@ -1131,13 +1131,13 @@ copy(const char *s, size_t n, Time t)
 }
 
 static void
-selrequest(XSelectionRequestEvent *rq)
+selrequest(Display *d, XSelectionRequestEvent *rq)
 {
 	XEvent ev;
 	XErrorHandler old;
 	Atom prop = rq->property == None ? rq->target : rq->property;
 	Atom list[3] = { targets, utf8string, XA_STRING };
-	long max = XExtendedMaxRequestSize(dpy) ? XExtendedMaxRequestSize(dpy) : XMaxRequestSize(dpy);
+	long max = XExtendedMaxRequestSize(d) ? XExtendedMaxRequestSize(d) : XMaxRequestSize(d);
 
 	memset(&ev, 0, sizeof ev);
 	ev.xselection.type = SelectionNotify;
@@ -1146,20 +1146,61 @@ selrequest(XSelectionRequestEvent *rq)
 	ev.xselection.target = rq->target;
 	ev.xselection.time = rq->time;
 	ev.xselection.property = None;
-	XSync(dpy, False);
+	XSync(d, False);
 	old = XSetErrorHandler(ignoreerror);
 	if (rq->selection == clipboard && clip) {
 		if (rq->target == targets) {
-			XChangeProperty(dpy, rq->requestor, prop, XA_ATOM, 32, PropModeReplace, (unsigned char *)list, LENGTH(list));
+			XChangeProperty(d, rq->requestor, prop, XA_ATOM, 32, PropModeReplace, (unsigned char *)list, LENGTH(list));
 			ev.xselection.property = prop;
 		} else if ((rq->target == utf8string || rq->target == XA_STRING) && clipn < (size_t)max * 4 - 64) {
-			XChangeProperty(dpy, rq->requestor, prop, rq->target, 8, PropModeReplace, (unsigned char *)clip, clipn);
+			XChangeProperty(d, rq->requestor, prop, rq->target, 8, PropModeReplace, (unsigned char *)clip, clipn);
 			ev.xselection.property = prop;
 		}
 	}
-	XSendEvent(dpy, rq->requestor, False, 0, &ev);
-	XSync(dpy, False);
+	XSendEvent(d, rq->requestor, False, 0, &ev);
+	XSync(d, False);
 	XSetErrorHandler(old);
+}
+
+static int
+keeperdead(Display *d)
+{
+	_exit(0);
+}
+
+static void
+keepclip(void)
+{
+	Display *d;
+	Window w;
+	XEvent ev;
+
+	if (!clip || XGetSelectionOwner(dpy, clipboard) != win || fork() != 0)
+		return;
+	setsid();
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGHUP, SIG_DFL);
+	signal(SIGUSR1, SIG_IGN);
+	close(ConnectionNumber(dpy));
+	if (lockfd >= 0)
+		close(lockfd);
+	close(sigpipe[0]);
+	close(sigpipe[1]);
+	XSetIOErrorHandler(keeperdead);
+	if (!(d = XOpenDisplay(NULL)))
+		_exit(0);
+	w = XCreateSimpleWindow(d, DefaultRootWindow(d), 0, 0, 1, 1, 0, 0, 0);
+	XSetSelectionOwner(d, clipboard, w, CurrentTime);
+	if (XGetSelectionOwner(d, clipboard) != w)
+		_exit(0);
+	while (1) {
+		XNextEvent(d, &ev);
+		if (ev.type == SelectionClear)
+			_exit(0);
+		if (ev.type == SelectionRequest)
+			selrequest(d, &ev.xselectionrequest);
+	}
 }
 
 static void
@@ -1404,7 +1445,7 @@ run(void)
 				draw();
 				break;
 			case SelectionRequest:
-				selrequest(&ev.xselectionrequest);
+				selrequest(dpy, &ev.xselectionrequest);
 				break;
 			case SelectionClear:
 				free(clip);
@@ -1470,6 +1511,7 @@ cleanup(void)
 			fprintf(stderr, "note: could not save %s\n", txtpath);
 		writepos(1);
 	}
+	keepclip();
 	if (lockfd >= 0)
 		close(lockfd);
 	if (xic)
