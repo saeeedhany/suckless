@@ -801,3 +801,28 @@ two_notes() {
   xdotool key 0 v l l
   wait_for_pixel "$x" "$y" '#c8c5bf'
 }
+
+@test "the cursor on the lam of a lam alef sits on the joined letter, not on the one before it" {
+  start_dwm_note
+  setxkbmap -layout ara
+  note & win=$(note_win)
+  x=$(( $(geometry "$win" X) + $(geometry "$win" WIDTH) - 10 )); y=$(( $(geometry "$win" Y) + 9 ))
+  xdotool type "سلام"; xdotool key Escape
+  setxkbmap -layout us,ara
+  xdotool key 0 l
+  wait_for_pixel "$x" "$y" '#222424'
+  read -r bar left right < <(text_extent "$win")
+  [ "$bar" -gt 0 ]
+  [ "$bar" -lt $(( $(geometry "$win" WIDTH) - 16 )) ]
+}
+
+@test "selecting just the lam of a lam alef highlights the joined letter, not the one before it" {
+  start_dwm_note
+  setxkbmap -layout ara
+  note & win=$(note_win)
+  x=$(( $(geometry "$win" X) + $(geometry "$win" WIDTH) - 10 )); y=$(( $(geometry "$win" Y) + 9 ))
+  xdotool type "سلام"; xdotool key Escape
+  setxkbmap -layout us,ara
+  xdotool key 0 l v l h
+  wait_for_pixel "$x" "$y" '#222424'
+}

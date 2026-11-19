@@ -811,11 +811,24 @@ celllen(size_t j)
 	return (j + 1 < vis.nc ? vis.off[j + 1] : vis.n) - vis.off[j];
 }
 
+static size_t
+shown(size_t j)
+{
+	size_t k, best = j;
+
+	if (celllen(j))
+		return j;
+	for (k = 0; k < vis.nc; k++)
+		if (celllen(k) && vis.log[k] > vis.log[j] && (best == j || vis.log[k] < vis.log[best]))
+			best = k;
+	return best;
+}
+
 static void
 drawsel(const char *s, size_t n, Row *row, unsigned int y)
 {
 	char glyph[8];
-	size_t from, to, at, j, len;
+	size_t from, to, at, j, k, len;
 	unsigned int w, x0, x, cw;
 	int kind;
 
@@ -833,13 +846,13 @@ drawsel(const char *s, size_t n, Row *row, unsigned int y)
 	x0 = rowstart(w);
 	for (j = 0; j < vis.nc; j++) {
 		at = row->start + vis.log[j];
-		if (at < from || at >= to)
+		if (at < from || at >= to || !celllen(k = shown(j)))
 			continue;
-		len = MIN(celllen(j), sizeof glyph - 1);
-		memcpy(glyph, vis.s + vis.off[j], len);
+		len = MIN(celllen(k), sizeof glyph - 1);
+		memcpy(glyph, vis.s + vis.off[k], len);
 		glyph[len] = '\0';
-		x = x0 + textw(vis.s, vis.off[j]);
-		cw = textw(vis.s + vis.off[j], celllen(j));
+		x = x0 + textw(vis.s, vis.off[k]);
+		cw = textw(vis.s + vis.off[k], celllen(k));
 		drw_text(drw, x, y, cw ? cw : charw, lineh, 0, glyph, 0);
 	}
 	drw_setscheme(drw, scheme);
@@ -883,6 +896,7 @@ drawcursor(const char *s, size_t n, Row *row, unsigned int y)
 			drw_text(drw, vis.base && x >= charw ? x - charw + 2 : x, y, charw, lineh, 0, " ", 0);
 		return;
 	}
+	j = shown(j);
 	len = celllen(j);
 	x = x0 + textw(vis.s, vis.off[j]);
 	cw = textw(vis.s + vis.off[j], len);
