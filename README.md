@@ -73,17 +73,28 @@ the ones you closed; `note -r` does the same at login. Text is saved as you
 type to `~/notes/<id>.txt`, and where the note sits, whether it is pinned and
 its tag go to `~/notes/.<id>.pos`. Closing an empty note removes it;
 `ctrl shift d` moves a note to `~/notes/.trash`. `super ctrl n` picks any
-saved note in dmenu by its first line, and `ctrl shift c` cycles a note through
-five colors drawn from the theme (`note.color1` to `note.color4`).
+saved note in dmenu by its first line; notes already open are marked `(open)`,
+and picking one flags its window instead of opening a second copy.
+`ctrl shift c` cycles a note through five colors drawn from the theme
+(`note.color1` to `note.color4`). A small mark in the top right corner shows
+while saves are failing, and goes away once one works.
 
 It starts in insert mode. Escape gives a small vim normal mode: `h j k l`,
-`w b e`, `0 ^ $`, `gg G`, `x`, `dd`, `dw`, `D`, `cw`, `cc`, `C`, `r`, `J`,
-`yy`, `p`, `P`, `i a I A o O`, `u` and `ctrl r`, with counts. Commands follow
-the physical key, so they work in the Arabic layout too. `ctrl shift v`
-pastes the clipboard. A line that starts with Arabic reads right to left and
-sits against the right edge, with its letters joined (`note/bidi.c`, FriBidi
-like st). `note/buf.c` holds the text and the keys, with no X
-code, and `make -C note test` checks every command.
+`w b e`, `0 ^ $`, `gg G`, `x`, `D`, `C`, `r`, `J`, `p`, `P`, `i a I A o O`, `u`
+and `ctrl r`, and the operators `d`, `c` and `y` with the motions `w e b`,
+`h l`, `0 ^ $`, `j k` and `gg G` (`dd`, `cw`, `y$`, `d2j`, `ygg`), all with
+counts. Commands follow the physical key, so they work in the Arabic layout too.
+
+Every yank also goes to the system clipboard, and `ctrl shift y` copies the
+whole note. X keeps no copy of the clipboard itself, so when a note closes
+while its text is still the latest copy, a small `note` process stays behind
+to hand it out, and quits as soon as anything else is copied. `ctrl shift v`
+pastes the clipboard.
+
+A line that starts with Arabic reads right to left and sits against the right
+edge, with its letters joined (`note/bidi.c`, FriBidi like st). `note/buf.c`
+holds the text and the keys, with no X code, and `make -C note test` checks
+every command.
 
 ## Upstream
 
