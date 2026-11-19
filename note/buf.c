@@ -18,7 +18,7 @@ struct Buf {
 	char *s;
 	size_t n, cap, cur, want;
 	int mode, dirty, insession;
-	int count, op, opcount;
+	int count, op, opcount, opg, ophad;
 	char *reg;
 	size_t regn;
 	int reglines, yanked;
@@ -293,24 +293,30 @@ lineafter(Buf *b, size_t ls, size_t count)
 	return e;
 }
 
-static void
-gotoline(Buf *b, size_t line)
+static size_t
+lineat(Buf *b, size_t line)
 {
 	size_t i = 0;
 
 	while (line-- > 1 && lineend(b, i) < b->n)
 		i = lineend(b, i) + 1;
-	b->cur = firstnonblank(b, i);
+	return i;
 }
 
 static void
-linesop(Buf *b, int op, size_t count)
+gotoline(Buf *b, size_t line)
 {
-	size_t ls = linestart(b, b->cur), le = lineafter(b, ls, count);
+	b->cur = firstnonblank(b, lineat(b, line));
+}
 
+static void
+linesrange(Buf *b, int op, size_t ls, size_t le)
+{
 	setreg(b, ls, le, 1);
 	if (op == 'y') {
 		b->yanked = 1;
+		if (ls < linestart(b, b->cur))
+			b->cur = firstnonblank(b, ls);
 		return;
 	}
 	pushundo(b);
@@ -388,39 +394,107 @@ join(Buf *b)
 }
 
 static void
-operate(Buf *b, int op, int key, size_t count)
+charsrange(Buf *b, int op, size_t from, size_t to)
 {
-	size_t to = b->cur, e = lineend(b, b->cur);
-
-	if (key == op) {
-		linesop(b, op, count);
+	if (from == to) {
+		if (op == 'c')
+			startinsert(b);
 		return;
 	}
-	if (key != 'w')
-		return;
-	if (op == 'c' && class(b, b->cur) != 0) {
-		if (next(b, to) < b->n && class(b, next(b, to)) == class(b, to))
-			to = wordend(b, to);
-		while (--count > 0)
-			to = wordend(b, to);
-		to = next(b, to);
-	} else {
-		while (count-- > 0)
-			to = wordfwd(b, to);
-	}
-	if (to > e)
-		to = e;
-	setreg(b, b->cur, to, 0);
+	setreg(b, from, to, 0);
 	if (op == 'y') {
 		b->yanked = 1;
+		b->cur = from;
 		return;
 	}
 	pushundo(b);
-	deleterange(b, b->cur, to);
+	deleterange(b, from, to);
+	b->cur = from;
 	if (op == 'c') {
 		b->insession = 1;
 		startinsert(b);
 	}
+}
+
+static void
+operate(Buf *b, int op, int key, size_t count, int had)
+{
+	size_t from = b->cur, to = b->cur, ls = linestart(b, b->cur), e = lineend(b, b->cur), t, i;
+
+	switch (key) {
+	case 'd': case 'c': case 'y':
+		if (key == op)
+			linesrange(b, op, ls, lineafter(b, ls, count));
+		return;
+	case 'j': case KeyDown:
+		for (t = ls, i = 0; i < count && lineend(b, t) < b->n; i++)
+			t = lineend(b, t) + 1;
+		if (i)
+			linesrange(b, op, ls, lineend(b, t));
+		return;
+	case 'k': case KeyUp:
+		for (t = ls, i = 0; i < count && t > 0; i++)
+			t = linestart(b, t - 1);
+		if (i)
+			linesrange(b, op, t, e);
+		return;
+	case 'G': case 'g':
+		t = lineat(b, key == 'g' || had ? count : (size_t)-1);
+		if (t < ls)
+			linesrange(b, op, t, e);
+		else
+			linesrange(b, op, ls, lineend(b, t));
+		return;
+	case 'w':
+		if (op == 'c' && class(b, b->cur) != 0) {
+			if (next(b, to) < b->n && class(b, next(b, to)) == class(b, to))
+				to = wordend(b, to);
+			while (--count > 0)
+				to = wordend(b, to);
+			to = next(b, to);
+		} else {
+			while (count-- > 0)
+				to = wordfwd(b, to);
+		}
+		break;
+	case 'e':
+		while (count-- > 0)
+			to = wordend(b, to);
+		to = next(b, to);
+		break;
+	case 'b':
+		while (count-- > 0)
+			from = wordback(b, from);
+		if (from < ls)
+			from = ls;
+		break;
+	case 'h': case KeyLeft:
+		for (i = 0; i < count && from > ls; i++)
+			from = prev(b, from);
+		break;
+	case 'l': case KeyRight:
+		for (i = 0; i < count && to < e; i++)
+			to = next(b, to);
+		break;
+	case '0': case KeyHome:
+		from = ls;
+		break;
+	case '^':
+		t = firstnonblank(b, ls);
+		if (t < from)
+			from = t;
+		else
+			to = t;
+		break;
+	case '$': case KeyEnd:
+		to = e;
+		break;
+	default:
+		return;
+	}
+	if (to > e)
+		to = e;
+	charsrange(b, op, from, to);
 }
 
 static void
@@ -464,7 +538,19 @@ normalkey(Buf *b, int key)
 		return;
 	}
 	if (op == 'd' || op == 'c' || op == 'y') {
-		operate(b, op, key, n);
+		if (key == 'g' && !b->opg) {
+			b->op = op;
+			b->opcount = n;
+			b->opg = 1;
+			b->ophad = b->ophad || hadcount;
+			return;
+		}
+		hadcount = hadcount || b->ophad;
+		i = b->opg;
+		b->opg = b->ophad = 0;
+		if (i && key != 'g')
+			return;
+		operate(b, op, key, n, hadcount);
 		clamp(b);
 		return;
 	}
@@ -535,6 +621,8 @@ normalkey(Buf *b, int key)
 	case 'g': case 'd': case 'c': case 'y': case 'r':
 		b->op = key;
 		b->opcount = n;
+		b->ophad = hadcount;
+		b->opg = 0;
 		return;
 	case 'x':
 		if (b->cur >= e)

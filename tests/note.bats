@@ -742,3 +742,11 @@ two_notes() {
   [ "$(pgrep -fc "$WORK/note")" -eq 0 ]
   [ "$(timeout 2 xclip -o -selection clipboard)" = "new" ]
 }
+
+@test "y with a motion copies to the clipboard" {
+  command -v xclip >/dev/null || skip "xclip not installed"
+  start_dwm_note
+  note & win=$(note_win)
+  xdotool type "buy oat milk"; xdotool key Escape; xdotool type "0wy\$"; sleep 0.3
+  [ "$(timeout 2 xclip -o -selection clipboard)" = "oat milk" ]
+}
