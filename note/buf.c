@@ -456,6 +456,8 @@ operate(Buf *b, int op, int key, size_t count, int had)
 			while (count-- > 0)
 				to = wordfwd(b, to);
 		}
+		if (to > e)
+			to = e;
 		break;
 	case 'e':
 		while (count-- > 0)
@@ -465,8 +467,6 @@ operate(Buf *b, int op, int key, size_t count, int had)
 	case 'b':
 		while (count-- > 0)
 			from = wordback(b, from);
-		if (from < ls)
-			from = ls;
 		break;
 	case 'h': case KeyLeft:
 		for (i = 0; i < count && from > ls; i++)
@@ -492,8 +492,6 @@ operate(Buf *b, int op, int key, size_t count, int had)
 	default:
 		return;
 	}
-	if (to > e)
-		to = e;
 	charsrange(b, op, from, to);
 }
 

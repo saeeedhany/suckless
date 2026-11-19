@@ -192,6 +192,9 @@ main(void)
 	check("cj", "a\nb\nc", 0, ModeNormal, "cjz\x1b", "z\nc", 0, ModeNormal);
 	check("c$", "one two", 4, ModeNormal, "c$x\x1b", "one x", 4, ModeNormal);
 	check("c0 at the line start", "ab", 0, ModeNormal, "c0x\x1b", "xab", 0, ModeNormal);
+	check("db at a line start reaches the line above", "one\ntwo", 4, ModeNormal, "db", "two", 0, ModeNormal);
+	check("de on the last letter reaches the next line", "one\ntwo three", 2, ModeNormal, "de", "on three", 2, ModeNormal);
+	check("dw on the last word stops at the line end", "one\ntwo", 0, ModeNormal, "dw", "\ntwo", 0, ModeNormal);
 	check("y$ keeps the cursor", "one two", 4, ModeNormal, "y$", "one two", 4, ModeNormal);
 	check("yb moves to the start", "one two", 4, ModeNormal, "yb", "one two", 0, ModeNormal);
 	check("ygg moves to the top", "a\nb\nc", 4, ModeNormal, "ygg", "a\nb\nc", 0, ModeNormal);
@@ -217,6 +220,8 @@ main(void)
 	checkyank("yk", "a\nb", 2, "yk", 1, "a\nb");
 	checkyank("y2j", "a\nb\nc\nd", 0, "y2j", 1, "a\nb\nc");
 	checkyank("yj on the last line", "a\nb", 2, "yj", 0, "");
+	checkyank("yb across a line", "one\ntwo", 4, "yb", 1, "one\n");
+	checkyank("ye across a line", "one\ntwo", 2, "ye", 1, "e\ntwo");
 	checkyank("dd is not a yank", "one\ntwo", 0, "dd", 0, "");
 	checkyank("x is not a yank", "one", 0, "x", 0, "");
 	checkyank("moving is not a yank", "one", 0, "l", 0, "");
