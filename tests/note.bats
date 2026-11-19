@@ -750,3 +750,24 @@ two_notes() {
   xdotool type "buy oat milk"; xdotool key Escape; xdotool type "0wy\$"; sleep 0.3
   [ "$(timeout 2 xclip -o -selection clipboard)" = "oat milk" ]
 }
+
+@test "a line of digits under an arabic line sits on the left" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'سلام\n123' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  note -o 20260101-000000 & win=$(note_win)
+  read -r bar left right < <(text_extent "$win" 30 44)
+  [ "$right" -gt 0 ]
+  [ "$left" -lt $(( $(geometry "$win" WIDTH) / 2 )) ]
+}
+
+@test "an empty line under a line of digits under an arabic line keeps the cursor on the left" {
+  mkdir -p "$BATS_TEST_TMPDIR/notes"
+  printf 'سلام\n123\n' > "$BATS_TEST_TMPDIR/notes/20260101-000000.txt"
+  start_dwm_note
+  note -o 20260101-000000 & win=$(note_win)
+  xdotool key Escape; xdotool type "G"; sleep 0.4
+  read -r bar left right < <(text_extent "$win" 51 65)
+  [ "$bar" -gt 0 ]
+  [ "$bar" -lt $(( $(geometry "$win" WIDTH) / 2 )) ]
+}

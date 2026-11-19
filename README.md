@@ -92,9 +92,10 @@ to hand it out, and quits as soon as anything else is copied. `ctrl shift v`
 pastes the clipboard.
 
 A line that starts with Arabic reads right to left and sits against the right
-edge, with its letters joined (`note/bidi.c`, FriBidi like st). `note/buf.c`
-holds the text and the keys, with no X code, and `make -C note test` checks
-every command.
+edge, with its letters joined (`note/bidi.c`, FriBidi like st). An empty line
+under it stays on the right, so the next line starts there. `note/buf.c` holds
+the text and the keys, with no X code, and `make -C note test` checks every
+command.
 
 ## Upstream
 

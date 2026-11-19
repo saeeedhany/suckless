@@ -748,18 +748,26 @@ cursorrow(void)
 }
 
 static int
+blankline(const char *s, size_t ls, size_t le)
+{
+	for (; ls < le; ls++)
+		if (s[ls] != ' ' && s[ls] != '\t')
+			return 0;
+	return 1;
+}
+
+static int
 linedir(const char *s, size_t n, size_t at)
 {
 	size_t ls = at, le = at;
-	int d;
 
 	while (le < n && s[le] != '\n')
 		le++;
 	while (1) {
 		while (ls > 0 && s[ls - 1] != '\n')
 			ls--;
-		if ((d = bidiparadir(s + ls, le - ls)) >= 0)
-			return d;
+		if (!blankline(s, ls, le))
+			return bidiparadir(s + ls, le - ls) == 1;
 		if (ls == 0)
 			return 0;
 		le = ls - 1;
